@@ -1,0 +1,9 @@
+# New build and packaging outputs. The historical prebuilt SDK remains tracked.
+/work/
+/dist/
+/packages/
+/build/
+/versions.lock.json
+/verification/
+__pycache__/
+*.pyc
