@@ -1,0 +1,69 @@
+OpenCV @OPENCV_VERSION@ + MinGW-w64 GCC @GCC_VERSION@
+Windows x64 / UCRT / POSIX threads / SEH exceptions
+
+This package contains the OpenCV C++ SDK, matching standalone MinGW-w64
+compiler toolchain, CMake, Ninja, required OpenCV runtime DLLs, and a small
+source example. It is intended for Windows 10 and later on x86-64 systems.
+
+GET STARTED
+
+For the installer edition, open "Developer Command Prompt" from the Start
+menu. For the ZIP edition, extract the complete top-level folder and run:
+
+  cmd /D /K "C:\path to package\activate.cmd"
+
+In an existing Command Prompt, use:
+
+  call "C:\path to package\activate.cmd"
+
+Activation changes only the current command prompt. The installer does not
+change the machine or user PATH. Use a fresh developer prompt when switching
+between installed toolchains.
+
+Build and run the source example:
+
+  build-example.cmd
+
+The example build is created under your LocalAppData\OpenCV-MinGW\examples
+folder. See examples\smoke for the editable C++ and CMake sources.
+
+YOUR OWN CMAKE PROJECT
+
+  find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc imgcodecs)
+  target_link_libraries(your_program PRIVATE ${OpenCV_LIBS})
+  target_compile_features(your_program PRIVATE cxx_std_17)
+
+Run CMake from the developer prompt with the Ninja generator. OpenCV_DIR is
+already set to this package's CMake configuration directory. Use the bundled
+GCC toolchain consistently when building applications that link these DLLs.
+
+FILES AND DEPLOYMENT
+
+  opencv\                 OpenCV C++ headers, import libraries, DLLs and data
+  mingw64\                Complete matching compiler toolchain and its tools
+  examples\smoke\         Small C++ example and its CMake project
+  build-info.json          Versions, source commits and package metadata
+  build-lock.json          Exact upstream release/source download information
+  activate.cmd             Configure the current command prompt
+
+OpenCV DLLs and their non-system runtime dependencies are in:
+  @OPENCV_BIN_DIR@
+
+When deploying a compiled application to another computer, copy its required
+OpenCV and runtime DLLs beside the application's EXE. Keep the supplied license
+and notice files with redistributed components.
+
+This is a C++ SDK. It does not install the Python cv2 extension or a Python
+environment. Read build-info.json and the OpenCV build information for the
+features actually included in this build.
+
+LICENSES
+
+OpenCV and each third-party component keep their own license. OpenCV's
+installed license files are retained under opencv\; toolchain license files
+are retained under mingw64\. See LICENSES.txt for the component source links.
+
+PROJECT AND DOWNLOADS
+
+https://github.com/liyiliuxingyu/opencv_mingw
+https://github.com/liyiliuxingyu/opencv_mingw/releases
