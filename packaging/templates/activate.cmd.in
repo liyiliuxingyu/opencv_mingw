@@ -1,0 +1,15 @@
+@echo off
+if defined OPENCV_MINGW_ACTIVE_ROOT if /I "%OPENCV_MINGW_ACTIVE_ROOT%"=="%~dp0" goto ready
+set "OPENCV_MINGW_ROOT=%~dp0"
+set "OpenCV_DIR=%~dp0@OPENCV_CMAKE_DIR@"
+set "PATH=%~dp0mingw64\bin;%~dp0@OPENCV_BIN_DIR@;%PATH%"
+set "CC=gcc"
+set "CXX=g++"
+set "CMAKE_GENERATOR=Ninja"
+set "OPENCV_MINGW_ACTIVE_ROOT=%~dp0"
+:ready
+echo OpenCV @OPENCV_VERSION@ + MinGW-w64 GCC @GCC_VERSION@ (x64, UCRT)
+echo OpenCV_DIR="%OpenCV_DIR%"
+echo This command prompt uses the compiler bundled with this package.
+echo Run build-example.cmd to build and run the included example.
+exit /b 0
