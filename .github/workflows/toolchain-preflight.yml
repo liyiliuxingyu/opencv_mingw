@@ -1,0 +1,93 @@
+name: Verify latest MinGW in paths with spaces
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/toolchain-preflight.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+
+      - name: Resolve and verify latest toolchain download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $work = Join-Path $env:RUNNER_TEMP 'toolchain preflight with spaces'
+          New-Item -ItemType Directory -Force -Path $work | Out-Null
+          ./scripts/resolve-versions.ps1 -OutputPath "$work/versions.lock.json"
+          $lock = Get-Content "$work/versions.lock.json" -Raw | ConvertFrom-Json
+          $archive = Join-Path $work $lock.winlibs_asset_name
+          Invoke-WebRequest -Uri $lock.winlibs_asset_url -OutFile $archive -MaximumRetryCount 3 -RetryIntervalSec 5
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $lock.winlibs_sha256) { throw 'Toolchain SHA-256 mismatch.' }
+          & 7z.exe x $archive "-o$work" -y
+          if ($LASTEXITCODE -ne 0) { throw 'Toolchain extraction failed.' }
+          "PREFLIGHT_ROOT=$work" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Apply manifest path compatibility patch
+        run: |
+          ./scripts/patch-toolchain.ps1 -ToolchainRoot "$env:PREFLIGHT_ROOT/mingw64"
+
+      - name: Compile and run C and C++ from a relocated toolchain
+        run: |
+          $toolchain = Join-Path $env:PREFLIGHT_ROOT 'mingw64'
+          $bin = Join-Path $toolchain 'bin'
+          $env:PATH = "$bin;$env:PATH"
+          $source = Join-Path $env:PREFLIGHT_ROOT 'consumer source with spaces'
+          $build = Join-Path $env:PREFLIGHT_ROOT 'consumer build with spaces'
+          New-Item -ItemType Directory -Force -Path $source | Out-Null
+          @'
+          cmake_minimum_required(VERSION 3.20)
+          project(MinGWPathTest LANGUAGES C CXX)
+          add_executable(path_test main.cpp answer.c)
+          target_compile_features(path_test PRIVATE cxx_std_17)
+          enable_testing()
+          add_test(NAME toolchain-paths COMMAND path_test)
+          '@ | Set-Content "$source/CMakeLists.txt" -Encoding utf8NoBOM
+          @'
+          #include <iostream>
+          #include <thread>
+          extern "C" int answer(void);
+          int main() {
+              int value = 0;
+              std::thread worker([&] { value = answer() + 2; });
+              worker.join();
+              std::cout << "C/C++/thread result: " << value << '\n';
+              return value == 42 ? 0 : 1;
+          }
+          '@ | Set-Content "$source/main.cpp" -Encoding utf8NoBOM
+          'int answer(void) { return 40; }' | Set-Content "$source/answer.c" -Encoding ascii
+          & "$bin/cmake.exe" -S $source -B $build -G Ninja "-DCMAKE_C_COMPILER=$bin/gcc.exe" "-DCMAKE_CXX_COMPILER=$bin/g++.exe" "-DCMAKE_MAKE_PROGRAM=$bin/ninja.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Relocated compiler configuration failed.' }
+          & "$bin/cmake.exe" --build $build --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'Relocated compiler build failed.' }
+          & "$bin/ctest.exe" --test-dir $build --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw 'Relocated compiler executable failed.' }
+          'Passed native C/C++ compilation, linking and execution with toolchain, source and build directories containing spaces.' | Out-File -LiteralPath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      - name: Upload preflight diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mingw-preflight-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/toolchain preflight with spaces/versions.lock.json
+            ${{ runner.temp }}/toolchain preflight with spaces/mingw64/build-info/toolchain-patch.json
+            ${{ runner.temp }}/toolchain preflight with spaces/consumer build with spaces/CMakeFiles/CMakeConfigureLog.yaml
+            ${{ runner.temp }}/toolchain preflight with spaces/consumer build with spaces/Testing/Temporary/LastTest.log
+          if-no-files-found: warn
+          retention-days: 14
