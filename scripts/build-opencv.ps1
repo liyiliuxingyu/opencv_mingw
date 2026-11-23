@@ -39,7 +39,7 @@ $logRoot = Join-Path $WorkRoot 'logs'
 $downloadRoot = Join-Path $WorkRoot 'downloads'
 $sourceRoot = Join-Path $WorkRoot 'sources'
 $buildRoot = Join-Path $WorkRoot 'build'
-$toolchainParent = Join-Path $WorkRoot 'toolchain'
+$toolchainParent = Join-Path $WorkRoot 'toolchain with spaces'
 New-Item -ItemType Directory -Force -Path $WorkRoot, $logRoot, $downloadRoot, $sourceRoot, $InstallRoot | Out-Null
 
 function Invoke-NativeLogged {
@@ -109,11 +109,30 @@ foreach ($exe in @($cCompiler, $cxxCompiler)) {
     if (-not (Test-Path -LiteralPath $exe)) { throw "Expected compiler was not found: $exe" }
 }
 $env:PATH = "$toolchainBin;$env:PATH"
+& (Join-Path $PSScriptRoot 'patch-toolchain.ps1') -ToolchainRoot $toolchainRoot -LogDir $logRoot | Out-Null
 $targetTriple = (& $cxxCompiler -dumpmachine | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or $targetTriple -ne 'x86_64-w64-mingw32') { throw "Unexpected compiler target: $targetTriple" }
 $gccVersion = (& $cxxCompiler -dumpfullversion | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or $gccVersion -ne $lock.gcc_version) { throw "Compiler version $gccVersion differs from lock $($lock.gcc_version)." }
 Invoke-NativeLogged $cxxCompiler @('-v') 'compiler-version.txt'
+
+# Fail before fetching/building OpenCV if a newly selected compiler cannot be
+# relocated. Both the compiler and consumer filenames intentionally have spaces.
+$compilerProbe = Join-Path $logRoot 'compiler path probe.cpp'
+$compilerProbeExe = Join-Path $logRoot 'compiler path probe.exe'
+@'
+#include <iostream>
+#include <thread>
+int main() {
+    int value = 0;
+    std::thread worker([&] { value = 42; });
+    worker.join();
+    std::cout << "Compiler path probe: " << value << '\n';
+    return value == 42 ? 0 : 1;
+}
+'@ | Set-Content -LiteralPath $compilerProbe -Encoding utf8NoBOM
+Invoke-NativeLogged $cxxCompiler @('-std=c++17', $compilerProbe, '-o', $compilerProbeExe) 'compiler-path-probe.log'
+Invoke-NativeLogged -File $compilerProbeExe -ArgumentList @() -LogName 'compiler-path-probe.log'
 
 $cmake = Join-Path $toolchainBin 'cmake.exe'
 $ninja = Join-Path $toolchainBin 'ninja.exe'
@@ -182,7 +201,7 @@ $opencvCMakeDir = $configFiles[0].DirectoryName
 $metadataRoot = Join-Path $InstallRoot 'build-info'
 New-Item -ItemType Directory -Force -Path $metadataRoot | Out-Null
 Copy-Item -LiteralPath $LockFile -Destination (Join-Path $metadataRoot 'versions.lock.json')
-foreach ($name in @('toolchain-sha256.txt', 'compiler-version.txt', 'cmake-version.txt', 'ninja-version.txt', 'cmake-options.json', 'cmake-ca-info.txt', 'configure.log', 'sources.log')) {
+foreach ($name in @('toolchain-sha256.txt', 'toolchain-patch.json', 'toolchain-specs.before.txt', 'toolchain-specs.after.txt', 'compiler-version.txt', 'compiler-path-probe.log', 'cmake-version.txt', 'ninja-version.txt', 'cmake-options.json', 'cmake-ca-info.txt', 'configure.log', 'sources.log')) {
     Copy-Item -LiteralPath (Join-Path $logRoot $name) -Destination $metadataRoot
 }
 foreach ($name in @('CMakeCache.txt', 'CMakeDownloadLog.txt')) {
