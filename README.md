@@ -22,6 +22,8 @@
 
 目标系统为 **Windows 10/11 x64**。这是 MinGW C++ SDK；Python `cv2`、CUDA、独立 Debug 库不在本次打包范围。OpenCV 的实际可用模块与第三方功能记录在构建摘要中。
 
+针对部分 WinLibs GCC 版本在含空格安装目录下拆分 `default-manifest.o` 路径的上游问题，构建会对已知的 GCC specs 表达式应用精确兼容补丁，保留默认 manifest 及原有条件。未受影响的版本保持原样；原始配置、补丁说明和前后 SHA-256 会随构建记录保留。工具链会先在含空格路径下编译并运行小型程序，再开始 OpenCV 构建。也可独立运行 **Verify latest MinGW in paths with spaces** 工作流快速检查最新工具链。
+
 仓库根目录已有的 `include/`、`x64/`、`OpenCVConfig.cmake` 等是历史 **4.5.1-dev** 分发文件。新构建使用独立源码和安装目录，新版下载请使用 Releases；不要把新旧两套头文件、导入库和 DLL 混放。
 
 ## 通过 GitHub Actions 创建安装文件
@@ -45,9 +47,16 @@
 | `…-build-lock.json` | 本次解析后的确切版本、源码提交与工具链 SHA-256 |
 | `…-build-info.json` | 构建能力、相对目录与补齐的运行库清单 |
 | `verification.json` | 本次 Windows 编译、运行、安装及卸载检查结果 |
+| `candidate-origin.json` | 原始构建的运行编号、提交与候选产物来源 |
 | `SHA256SUMS` | 以上下载文件的 SHA-256 校验值 |
 
-每次发布使用独立的运行编号与重试编号，不覆盖历史发布。Actions 的临时 Artifacts 保留 14 天；正式下载使用 Releases。
+每次发布使用全局唯一的运行 ID 与重试编号，不覆盖历史发布。Actions 的临时 Artifacts 保留 14 天；正式下载使用 Releases。安装包创建后会先保存 `opencv-candidate-运行ID-重试编号`，这是尚未完成分发验证的候选产物；只有后续所有检查通过，才会上传已验证产物并发布 Release。
+
+### 复用已完成的候选安装包
+
+如果耗时的编译和打包已成功，但后续验证失败，可先修复验证脚本，再运行 **Verify an existing OpenCV installer candidate**。填写原构建页面 URL 中的 `source_run_id`，`source_run_attempt` 默认为 `1`。它会校验候选产物来源和全部校验值，从原 ZIP 恢复暂存 SDK，重新检查 ZIP、EXE 安装、消费者运行和卸载，无需重新编译 OpenCV。
+
+恢复工作流的 `publish` 默认关闭；需要发布时启用，且原构建与恢复工作流都必须来自默认分支。发布记录分别列出原构建与本次验证的提交。此工作流不修改候选 ZIP/EXE；如果需要修复包内文件或重新编译，请运行完整构建。
 
 ## 安装和使用
 
