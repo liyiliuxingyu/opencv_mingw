@@ -1,0 +1,211 @@
+name: Verify an existing OpenCV installer candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: 'Build workflow run ID containing the unverified candidate artifact'
+        required: true
+        type: string
+      source_run_attempt:
+        description: 'Attempt number of the original build run'
+        required: true
+        default: '1'
+        type: string
+      publish:
+        description: 'Publish after verification (both workflows must use the default branch)'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: opencv-candidate-${{ inputs.source_run_id }}-${{ inputs.source_run_attempt }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Restore and verify the original EXE and ZIP
+    runs-on: windows-2022
+    timeout-minutes: 40
+    permissions:
+      actions: read
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out current verification scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github
+            scripts
+            examples
+
+      - name: Download candidate and verify origin, checksums and source metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ inputs.source_run_attempt }}
+          PUBLISH_REQUESTED: ${{ inputs.publish }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          foreach ($value in @($env:SOURCE_RUN_ID, $env:SOURCE_RUN_ATTEMPT)) {
+            if ($value -notmatch '^[1-9][0-9]*$') { throw 'Source run ID and attempt must be positive integers.' }
+          }
+          $sourceJson = & gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:SOURCE_RUN_ID"
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read the original workflow run.' }
+          $source = ($sourceJson -join "`n") | ConvertFrom-Json
+          if ($source.repository.full_name -ne $env:GITHUB_REPOSITORY -or
+              $source.head_repository.full_name -ne $env:GITHUB_REPOSITORY -or
+              $source.path -ne '.github/workflows/build-windows.yml' -or
+              $source.event -notin @('push', 'workflow_dispatch') -or
+              $source.head_sha -notmatch '^[0-9a-f]{40}$' -or
+              [long]$source.id -ne [long]$env:SOURCE_RUN_ID -or
+              [long]$source.run_attempt -lt [long]$env:SOURCE_RUN_ATTEMPT) {
+            throw 'The requested run is not a matching native build from this repository.'
+          }
+          if ($source.status -ne 'completed') { throw 'Wait for the original build run to finish before restoring its candidate.' }
+          if ($env:PUBLISH_REQUESTED -eq 'true' -and
+              ($env:GITHUB_REF -ne "refs/heads/$env:DEFAULT_BRANCH" -or $source.head_branch -ne $env:DEFAULT_BRANCH)) {
+            throw 'Publication requires the original build and this verification to use the default branch.'
+          }
+          $outputDir = Join-Path $env:GITHUB_WORKSPACE 'dist'
+          if (Test-Path -LiteralPath $outputDir) { throw 'Use an empty candidate output directory.' }
+          New-Item -ItemType Directory -Path $outputDir | Out-Null
+          $artifactName = "opencv-candidate-$env:SOURCE_RUN_ID-$env:SOURCE_RUN_ATTEMPT"
+          & gh run download $env:SOURCE_RUN_ID --repo $env:GITHUB_REPOSITORY --name $artifactName --dir $outputDir
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate download failed; check the run, attempt and artifact retention period.' }
+
+          $origin = Get-Content -LiteralPath (Join-Path $outputDir 'candidate-origin.json') -Raw | ConvertFrom-Json
+          if ($origin.schema_version -ne 1 -or $origin.checkpoint_status -ne 'unverified' -or
+              $origin.repository -ne $env:GITHUB_REPOSITORY -or
+              $origin.workflow_path -ne $source.path -or
+              [string]$origin.source_run_id -ne $env:SOURCE_RUN_ID -or
+              [string]$origin.source_run_attempt -ne $env:SOURCE_RUN_ATTEMPT -or
+              [long]$origin.source_run_number -ne [long]$source.run_number -or
+              $origin.source_commit -ne $source.head_sha -or
+              $origin.source_ref -ne "refs/heads/$($source.head_branch)") {
+            throw 'Candidate provenance does not match the original GitHub Actions run.'
+          }
+          $packageName = [string]$origin.package_name
+          if ($packageName -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$') { throw 'Invalid candidate package name.' }
+          $releaseFiles = @("$packageName-setup.exe", "$packageName.zip", "$packageName-build-info.json",
+            "$packageName-build-lock.json", 'candidate-origin.json')
+          $candidateFiles = @($releaseFiles) + @('SHA256SUMS', 'package-result.json', 'build-state.json')
+          $allowedFiles = @($candidateFiles) + @('CANDIDATE_SHA256SUMS')
+          foreach ($item in Get-ChildItem -LiteralPath $outputDir -Force) {
+            if ($item.PSIsContainer -or $item.Name -cnotin $allowedFiles) { throw "Unexpected candidate content: $($item.Name)" }
+          }
+          function Test-ChecksumManifest([string]$Path, [string[]]$ExpectedNames) {
+            $seen = @{}
+            foreach ($line in Get-Content -LiteralPath $Path) {
+              if ([string]::IsNullOrWhiteSpace($line)) { continue }
+              if ($line -cnotmatch '^([0-9a-fA-F]{64})  ([A-Za-z0-9][A-Za-z0-9._-]*)$') {
+                throw "Invalid checksum line in $Path"
+              }
+              $digest = $Matches[1]
+              $name = $Matches[2]
+              if ($name -cnotin $ExpectedNames -or $seen.ContainsKey($name)) { throw "Unexpected or duplicate checksum: $name" }
+              $actual = (Get-FileHash -LiteralPath (Join-Path $outputDir $name) -Algorithm SHA256).Hash
+              if ($actual -ne $digest) { throw "Candidate checksum mismatch: $name" }
+              $seen[$name] = $true
+            }
+            foreach ($name in $ExpectedNames) {
+              if (-not $seen.ContainsKey($name)) { throw "Missing candidate checksum: $name" }
+            }
+          }
+          Test-ChecksumManifest (Join-Path $outputDir 'CANDIDATE_SHA256SUMS') $candidateFiles
+          Test-ChecksumManifest (Join-Path $outputDir 'SHA256SUMS') $releaseFiles
+
+          $resultPath = Join-Path $outputDir 'package-result.json'
+          $result = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json
+          $info = Get-Content -LiteralPath (Join-Path $outputDir "$packageName-build-info.json") -Raw | ConvertFrom-Json
+          $lock = Get-Content -LiteralPath (Join-Path $outputDir "$packageName-build-lock.json") -Raw | ConvertFrom-Json
+          $state = Get-Content -LiteralPath (Join-Path $outputDir 'build-state.json') -Raw | ConvertFrom-Json
+          foreach ($record in @($result, $info, $lock, $state)) {
+            if ($record.schema_version -ne 1 -or $record.package_name -ne $packageName) { throw 'Candidate metadata does not describe one package.' }
+            foreach ($field in @('opencv_version', 'gcc_version', 'mingw_version', 'winlibs_version')) {
+              if (-not [string]$record.$field -or $record.$field -ne $result.$field) { throw "Candidate metadata mismatch: $field" }
+            }
+          }
+          foreach ($field in @('opencv_commit', 'contrib_commit')) {
+            if ($lock.$field -notmatch '^[0-9a-f]{40}$' -or $info.$field -ne $lock.$field -or $state.$field -ne $lock.$field) {
+              throw "Candidate source commit mismatch: $field"
+            }
+          }
+
+          # The original result contains paths from a different runner. Restore the
+          # staged SDK from its checked ZIP and rebase only this internal routing file.
+          $stageParent = Join-Path $env:RUNNER_TEMP 'candidate-stage'
+          if (Test-Path -LiteralPath $stageParent) { throw 'Use a fresh candidate staging directory.' }
+          $zipPath = Join-Path $outputDir "$packageName.zip"
+          Expand-Archive -LiteralPath $zipPath -DestinationPath $stageParent
+          $packageRoot = Join-Path $stageParent $packageName
+          foreach ($name in @('build-info', 'build-lock')) {
+            $inside = (Get-FileHash -LiteralPath (Join-Path $packageRoot "$name.json") -Algorithm SHA256).Hash
+            $outside = (Get-FileHash -LiteralPath (Join-Path $outputDir "$packageName-$name.json") -Algorithm SHA256).Hash
+            if ($inside -ne $outside) { throw "ZIP and external $name metadata differ." }
+          }
+          $result.package_root = $packageRoot
+          $result.zip_path = $zipPath
+          $result.installer_path = Join-Path $outputDir "$packageName-setup.exe"
+          $result.build_info_path = Join-Path $outputDir "$packageName-build-info.json"
+          $result.build_lock_path = Join-Path $outputDir "$packageName-build-lock.json"
+          $result.checksums_path = Join-Path $outputDir 'SHA256SUMS'
+          $result | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $resultPath -Encoding utf8NoBOM
+          "OUTPUT_DIR=$outputDir" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
+          "ORIGINAL_SOURCE_COMMIT=$($origin.source_commit)" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
+          "Restored unchanged EXE and ZIP from [build run $env:SOURCE_RUN_ID](https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:SOURCE_RUN_ID), attempt $env:SOURCE_RUN_ATTEMPT. Distribution verification is still required." |
+            Out-File -LiteralPath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      - name: Verify restored SDK, relocated ZIP, silent installation and uninstall
+        run: |
+          ./scripts/verify-distribution.ps1 -ResultFile "$env:OUTPUT_DIR/package-result.json" `
+            -WorkRoot "$env:RUNNER_TEMP/distribution verification"
+
+      - name: Upload verified original installers and new verification report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: opencv-mingw-x64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            dist/*.exe
+            dist/*.zip
+            dist/*-build-info.json
+            dist/*-build-lock.json
+            dist/candidate-origin.json
+            dist/verification.json
+            dist/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Publish with the original build commit as the release target
+        if: inputs.publish && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ./scripts/publish-release.ps1 -ResultFile "$env:OUTPUT_DIR/package-result.json" `
+            -SourceCommit $env:ORIGINAL_SOURCE_COMMIT
+
+      - name: Upload candidate verification diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: opencv-verification-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            dist/candidate-origin.json
+            dist/verification.json
+            ${{ runner.temp }}/distribution verification/**/*.log
+            ${{ runner.temp }}/distribution verification/**/CMakeConfigureLog.yaml
+            ${{ runner.temp }}/distribution verification/**/opencv-build-info.txt
+            ${{ runner.temp }}/distribution verification/**/test-result.json
+          if-no-files-found: warn
+          retention-days: 14

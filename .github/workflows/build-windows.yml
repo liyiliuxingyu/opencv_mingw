@@ -109,6 +109,54 @@ jobs:
             -PackageRoot "$env:PACKAGE_PARENT/$env:PACKAGE_NAME" `
             -OutputDir $env:OUTPUT_DIR -IsccPath $env:ISCC_PATH
 
+      - name: Record unverified candidate provenance and recovery checksums
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $result = Get-Content -LiteralPath "$env:OUTPUT_DIR/package-result.json" -Raw | ConvertFrom-Json
+          Copy-Item -LiteralPath "$env:WORK_ROOT/build-state.json" -Destination "$env:OUTPUT_DIR/build-state.json"
+          $origin = [ordered]@{
+            schema_version = 1
+            checkpoint_status = 'unverified'
+            repository = $env:GITHUB_REPOSITORY
+            workflow_path = '.github/workflows/build-windows.yml'
+            source_run_id = $env:GITHUB_RUN_ID
+            source_run_number = $env:GITHUB_RUN_NUMBER
+            source_run_attempt = $env:GITHUB_RUN_ATTEMPT
+            source_commit = $env:GITHUB_SHA
+            source_ref = $env:GITHUB_REF
+            package_name = $result.package_name
+            created_at_utc = [DateTime]::UtcNow.ToString('o')
+          }
+          $originPath = Join-Path $env:OUTPUT_DIR 'candidate-origin.json'
+          $origin | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $originPath -Encoding utf8NoBOM
+          $digest = (Get-FileHash -LiteralPath $originPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$digest  candidate-origin.json" | Add-Content -LiteralPath $result.checksums_path -Encoding utf8NoBOM
+          $candidateFiles = @($result.installer_path, $result.zip_path, $result.build_info_path,
+            $result.build_lock_path, $result.checksums_path, $originPath,
+            "$env:OUTPUT_DIR/package-result.json", "$env:OUTPUT_DIR/build-state.json")
+          $hashes = foreach ($path in $candidateFiles) {
+            '{0}  {1}' -f (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant(), [IO.Path]::GetFileName($path)
+          }
+          $hashes | Set-Content -LiteralPath "$env:OUTPUT_DIR/CANDIDATE_SHA256SUMS" -Encoding utf8NoBOM
+
+      - name: Preserve unverified installer candidate before distribution checks
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: opencv-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            dist/*.exe
+            dist/*.zip
+            dist/*-build-info.json
+            dist/*-build-lock.json
+            dist/package-result.json
+            dist/build-state.json
+            dist/candidate-origin.json
+            dist/SHA256SUMS
+            dist/CANDIDATE_SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
       - name: Verify SDK, extracted ZIP, silent installation and uninstall
         run: |
           ./scripts/verify-distribution.ps1 -ResultFile "$env:OUTPUT_DIR/package-result.json" `
@@ -123,6 +171,7 @@ jobs:
             dist/*.zip
             dist/*-build-info.json
             dist/*-build-lock.json
+            dist/candidate-origin.json
             dist/verification.json
             dist/SHA256SUMS
           if-no-files-found: error
@@ -149,6 +198,7 @@ jobs:
             ${{ runner.temp }}/opencv-work-${{ github.run_attempt }}/build/CMakeFiles/CMakeConfigureLog.yaml
             ${{ runner.temp }}/distribution verification/**/opencv-build-info.txt
             ${{ runner.temp }}/distribution verification/**/test-result.json
-            ${{ runner.temp }}/distribution verification/*.log
+            ${{ runner.temp }}/distribution verification/**/*.log
+            ${{ runner.temp }}/distribution verification/**/CMakeConfigureLog.yaml
           if-no-files-found: warn
           retention-days: 14
