@@ -50,6 +50,38 @@ function Invoke-NativeLogged {
 }
 
 $git = (Get-Command git.exe -ErrorAction Stop).Source
+# WinLibs CMake uses GnuTLS and may not discover Windows trust anchors itself.
+# Supply a trusted CA bundle explicitly; keep certificate verification enabled.
+$gitCaInfo = (& $git config --path --get http.sslCAInfo | Out-String).Trim()
+if ($LASTEXITCODE -notin @(0, 1)) { throw 'Could not read the Git HTTPS CA configuration.' }
+$gitRoot = Split-Path -Parent (Split-Path -Parent $git)
+$caCandidates = @(
+    $env:CMAKE_TLS_CAINFO,
+    $gitCaInfo,
+    (Join-Path $gitRoot 'mingw64/etc/ssl/certs/ca-bundle.crt'),
+    (Join-Path $gitRoot 'mingw64/ssl/certs/ca-bundle.crt'),
+    (Join-Path $gitRoot 'usr/ssl/certs/ca-bundle.crt')
+)
+$caSource = $caCandidates | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } | Select-Object -First 1
+$caBundle = Join-Path $WorkRoot 'cmake-ca-bundle.pem'
+if ($caSource) {
+    Copy-Item -LiteralPath $caSource -Destination $caBundle
+} else {
+    # Minimal Git installations may omit the Mozilla bundle. Reuse Windows trust.
+    $roots = @(Get-ChildItem 'Cert:\LocalMachine\Root', 'Cert:\CurrentUser\Root' | Sort-Object Thumbprint -Unique)
+    if ($roots.Count -eq 0) { throw 'No trusted root certificates are available for CMake HTTPS downloads.' }
+    $pem = [Text.StringBuilder]::new()
+    foreach ($root in $roots) {
+        [void]$pem.AppendLine('-----BEGIN CERTIFICATE-----')
+        [void]$pem.AppendLine([Convert]::ToBase64String($root.RawData, [Base64FormattingOptions]::InsertLineBreaks))
+        [void]$pem.AppendLine('-----END CERTIFICATE-----')
+    }
+    [IO.File]::WriteAllText($caBundle, $pem.ToString(), [Text.Encoding]::ASCII)
+    $caSource = 'Windows LocalMachine/CurrentUser trusted root stores'
+}
+"Source: $caSource`nSHA256: $((Get-FileHash -LiteralPath $caBundle -Algorithm SHA256).Hash)" |
+    Set-Content (Join-Path $logRoot 'cmake-ca-info.txt') -Encoding utf8NoBOM
+
 $sevenZipCommand = Get-Command 7z.exe -ErrorAction SilentlyContinue
 if ($sevenZipCommand) {
     $sevenZip = $sevenZipCommand.Source
@@ -113,6 +145,7 @@ $options = @(
     "-DCMAKE_MAKE_PROGRAM=$ninja", "-DCMAKE_INSTALL_PREFIX=$InstallRoot",
     '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_CXX_STANDARD=17', '-DCMAKE_CXX_STANDARD_REQUIRED=ON',
     '-DCMAKE_POLICY_VERSION_MINIMUM=3.5',
+    "-DCMAKE_TLS_CAINFO=$($caBundle.Replace('\', '/'))", '-DCMAKE_TLS_VERIFY=ON',
     "-DOPENCV_EXTRA_MODULES_PATH=$contribSource/modules", "-DOPENCV_DOWNLOAD_PATH=$downloadCache",
     "-DOPENCV_VCSVERSION=$($lock.opencv_version)-$($lock.opencv_commit)",
     '-DBUILD_SHARED_LIBS=ON', '-DBUILD_opencv_world=ON',
@@ -149,7 +182,7 @@ $opencvCMakeDir = $configFiles[0].DirectoryName
 $metadataRoot = Join-Path $InstallRoot 'build-info'
 New-Item -ItemType Directory -Force -Path $metadataRoot | Out-Null
 Copy-Item -LiteralPath $LockFile -Destination (Join-Path $metadataRoot 'versions.lock.json')
-foreach ($name in @('toolchain-sha256.txt', 'compiler-version.txt', 'cmake-version.txt', 'ninja-version.txt', 'cmake-options.json', 'configure.log', 'sources.log')) {
+foreach ($name in @('toolchain-sha256.txt', 'compiler-version.txt', 'cmake-version.txt', 'ninja-version.txt', 'cmake-options.json', 'cmake-ca-info.txt', 'configure.log', 'sources.log')) {
     Copy-Item -LiteralPath (Join-Path $logRoot $name) -Destination $metadataRoot
 }
 foreach ($name in @('CMakeCache.txt', 'CMakeDownloadLog.txt')) {
