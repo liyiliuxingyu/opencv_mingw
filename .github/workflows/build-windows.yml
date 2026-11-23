@@ -1,0 +1,154 @@
+name: Build latest OpenCV and MinGW installers
+
+on:
+  workflow_dispatch:
+    inputs:
+      opencv_version:
+        description: 'OpenCV stable release tag, or latest'
+        required: true
+        default: latest
+        type: string
+      winlibs_version:
+        description: 'WinLibs stable release tag, or latest (x64 POSIX SEH UCRT)'
+        required: true
+        default: latest
+        type: string
+      parallel_jobs:
+        description: 'Compiler jobs (1-8; reduce if memory is insufficient)'
+        required: true
+        default: 4
+        type: number
+      publish:
+        description: 'Publish verified EXE and ZIP to GitHub Releases (default branch only)'
+        required: true
+        default: true
+        type: boolean
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/build-windows.yml'
+      - 'scripts/**'
+      - 'packaging/**'
+      - 'examples/smoke/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opencv-mingw-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Windows x64 / latest stable / UCRT
+    runs-on: windows-2022
+    timeout-minutes: 180
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      OPENCV_VERSION: ${{ inputs.opencv_version || 'latest' }}
+      WINLIBS_VERSION: ${{ inputs.winlibs_version || 'latest' }}
+      PARALLEL_JOBS: ${{ inputs.parallel_jobs || 4 }}
+
+    steps:
+      - name: Check out build scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github
+            scripts
+            packaging
+            examples
+            docs
+
+      - name: Prepare isolated work directories
+        run: |
+          "WORK_ROOT=$env:RUNNER_TEMP/opencv-work-$env:GITHUB_RUN_ATTEMPT" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
+          "PACKAGE_PARENT=$env:RUNNER_TEMP/opencv-packages" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
+          "OUTPUT_DIR=$env:GITHUB_WORKSPACE/dist" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Resolve latest stable source and toolchain versions
+        id: versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ./scripts/resolve-versions.ps1 -OpenCVVersion $env:OPENCV_VERSION `
+            -WinLibsVersion $env:WINLIBS_VERSION `
+            -OutputPath "$env:WORK_ROOT/versions.lock.json"
+
+      - name: Ensure installer compiler is available
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            choco install innosetup --yes --no-progress --limit-output
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
+          }
+          if (-not (Test-Path -LiteralPath $iscc)) { throw 'Inno Setup ISCC.exe was not found.' }
+          "ISCC_PATH=$iscc" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build OpenCV and matching contrib modules
+        id: build
+        env:
+          PACKAGE_NAME: ${{ steps.versions.outputs.package_name }}
+        run: |
+          ./scripts/build-opencv.ps1 -LockFile "$env:WORK_ROOT/versions.lock.json" `
+            -WorkRoot $env:WORK_ROOT `
+            -InstallRoot "$env:PACKAGE_PARENT/$env:PACKAGE_NAME/opencv" `
+            -ParallelJobs ([int]$env:PARALLEL_JOBS)
+
+      - name: Bundle compiler and runtime DLLs; create ZIP and EXE
+        id: package
+        env:
+          PACKAGE_NAME: ${{ steps.versions.outputs.package_name }}
+        run: |
+          ./scripts/package-opencv.ps1 -StateFile "$env:WORK_ROOT/build-state.json" `
+            -PackageRoot "$env:PACKAGE_PARENT/$env:PACKAGE_NAME" `
+            -OutputDir $env:OUTPUT_DIR -IsccPath $env:ISCC_PATH
+
+      - name: Verify SDK, extracted ZIP, silent installation and uninstall
+        run: |
+          ./scripts/verify-distribution.ps1 -ResultFile "$env:OUTPUT_DIR/package-result.json" `
+            -WorkRoot "$env:RUNNER_TEMP/distribution verification"
+
+      - name: Upload verified installers and build records
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: opencv-mingw-x64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            dist/*.exe
+            dist/*.zip
+            dist/*-build-info.json
+            dist/*-build-lock.json
+            dist/verification.json
+            dist/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Publish verified installers to Releases
+        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && (github.event_name == 'push' || inputs.publish)
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/publish-release.ps1 -ResultFile "$env:OUTPUT_DIR/package-result.json"
+
+      - name: Upload diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: opencv-build-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/opencv-work-${{ github.run_attempt }}/logs
+            ${{ runner.temp }}/opencv-work-${{ github.run_attempt }}/versions.lock.json
+            ${{ runner.temp }}/opencv-work-${{ github.run_attempt }}/build-state.json
+            ${{ runner.temp }}/opencv-work-${{ github.run_attempt }}/build/CMakeDownloadLog.txt
+            ${{ runner.temp }}/opencv-work-${{ github.run_attempt }}/build/CMakeFiles/CMakeConfigureLog.yaml
+            ${{ runner.temp }}/distribution verification/**/opencv-build-info.txt
+            ${{ runner.temp }}/distribution verification/**/test-result.json
+            ${{ runner.temp }}/distribution verification/*.log
+          if-no-files-found: warn
+          retention-days: 14
