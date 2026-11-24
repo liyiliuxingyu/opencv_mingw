@@ -1,0 +1,111 @@
+name: Auto update Windows downloads
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      check_upstream:
+        description: 'Check official stable OpenCV and WinLibs releases after refreshing downloads'
+        type: boolean
+        default: true
+      dispatch_builds:
+        description: 'Start missing builds when needed (false only reports the decisions)'
+        type: boolean
+        default: true
+  repository_dispatch:
+    types: [windows-release-published]
+  release:
+    types: [published]
+  workflow_run:
+    workflows:
+      - Build latest OpenCV and MinGW installers
+      - Build OpenCV Python CUDA and Debug
+      - Verify an existing OpenCV installer candidate
+      - Verify an extended OpenCV candidate
+      - Upload verified assets to an owner-created draft
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: windows-download-maintenance
+  cancel-in-progress: false
+
+jobs:
+  maintain:
+    name: Refresh verified downloads and check upstream
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.head_branch == github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out the current default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: |
+            scripts
+            config
+            docs
+          # The ephemeral repository token is used only for the generated
+          # README/docs commit. No personal token or force push is used.
+          persist-credentials: true
+      - name: Verify published assets and refresh download links
+        id: downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/update-download-index.ps1 -Repository $env:GITHUB_REPOSITORY -RepositoryRoot $env:GITHUB_WORKSPACE
+      - name: Commit changed download links
+        if: steps.downloads.outputs.changed == 'true'
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- README.md docs/downloads.md docs/latest-windows.json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot stage the generated download index.' }
+          git diff --cached --quiet
+          $difference = $LASTEXITCODE
+          if ($difference -eq 0) { Write-Host 'Download links already match the verified releases.'; exit 0 }
+          if ($difference -ne 1) { throw 'Cannot inspect the generated download diff.' }
+          git commit -m 'Update verified Windows downloads [skip ci]'
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot commit the generated download index.' }
+          git push origin "HEAD:refs/heads/$env:DEFAULT_BRANCH"
+          if ($LASTEXITCODE -ne 0) {
+            throw 'The default branch changed or rejected the update. No force push was attempted; the next maintenance run can retry.'
+          }
+      - name: Check stable upstream versions and dispatch only needed builds
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.check_upstream)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISPATCH_BUILDS: ${{ github.event_name == 'schedule' || inputs.dispatch_builds }}
+        run: |
+          $parameters = @{
+            Repository = $env:GITHUB_REPOSITORY
+            ConfigPath = './config/auto-update.json'
+            CatalogPath = './docs/latest-windows.json'
+            OutputPath = "$env:RUNNER_TEMP/windows-update-check.json"
+          }
+          if ($env:DISPATCH_BUILDS -ne 'true') { $parameters.CheckOnly = $true }
+          ./scripts/check-upstream-updates.ps1 @parameters
+      - name: Retain the version check decisions
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-update-check-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/windows-update-check.json
+          if-no-files-found: ignore
+          retention-days: 14
