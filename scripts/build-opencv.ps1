@@ -4,7 +4,10 @@ param(
     [Parameter(Mandatory)][string]$LockFile,
     [Parameter(Mandatory)][string]$WorkRoot,
     [Parameter(Mandatory)][string]$InstallRoot,
-    [ValidateRange(1, 8)][int]$ParallelJobs = 4
+    [ValidateSet('Release', 'Debug')][string]$Configuration = 'Release',
+    [string]$PythonExecutable,
+    [ValidateRange(1, 8)][int]$ParallelJobs = 4,
+    [switch]$CleanupBuild
 )
 
 Set-StrictMode -Version Latest
@@ -18,6 +21,19 @@ $WorkRoot = [IO.Path]::GetFullPath($WorkRoot)
 $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
 $lock = Get-Content -LiteralPath $LockFile -Raw | ConvertFrom-Json
 if ($lock.schema_version -ne 1) { throw 'Unsupported versions.lock.json schema.' }
+$Configuration = if ($Configuration -eq 'Debug') { 'Debug' } else { 'Release' }
+$isDebug = $Configuration -eq 'Debug'
+$pythonEnabled = -not [string]::IsNullOrWhiteSpace($PythonExecutable)
+if ($isDebug -and $pythonEnabled) { throw 'Debug is a separate C++ SDK; cv2 is built with the Release configuration.' }
+if ($lock.PSObject.Properties['python_bindings'] -and [bool]$lock.python_bindings -ne $pythonEnabled) {
+    throw 'The Python selection differs from the source lock.'
+}
+if ($lock.PSObject.Properties['configuration'] -and $lock.configuration -ne $Configuration) {
+    throw 'The requested configuration differs from the source lock.'
+}
+if ($isDebug -and $lock.package_name -notmatch '-debug$') {
+    throw 'A Debug build requires its own package name ending in -debug.'
+}
 foreach ($sha in @($lock.opencv_commit, $lock.contrib_commit)) {
     if ($sha -notmatch '^[0-9a-f]{40}$') { throw 'Source commits must be full 40-character Git SHAs.' }
 }
@@ -141,6 +157,24 @@ foreach ($exe in @($cmake, $ninja)) {
 }
 Invoke-NativeLogged $cmake @('--version') 'cmake-version.txt'
 Invoke-NativeLogged $ninja @('--version') 'ninja-version.txt'
+if ($isDebug) {
+    foreach ($name in @('objdump.exe', 'gdb.exe')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $toolchainBin $name) -PathType Leaf)) {
+            throw "The standalone Debug SDK requires $name from the complete WinLibs bundle."
+        }
+    }
+    Invoke-NativeLogged (Join-Path $toolchainBin 'gdb.exe') @('--version') 'gdb-version.txt'
+}
+$pythonConfig = $null
+if ($pythonEnabled) {
+    $PythonExecutable = (Resolve-Path -LiteralPath $PythonExecutable).Path
+    $pythonConfig = & (Join-Path $PSScriptRoot 'get-python-build-config.ps1') `
+        -PythonExecutable $PythonExecutable -InstallRoot $InstallRoot `
+        -WorkRoot (Join-Path $WorkRoot 'python-config') -CxxCompiler $cxxCompiler
+    if ($lock.PSObject.Properties['python_version'] -and $lock.python_version -ne $pythonConfig.python.major_minor) {
+        throw 'The selected CPython major/minor version differs from the source lock.'
+    }
+}
 
 function Get-PinnedSource([string]$Name, [string]$Repository, [string]$Commit) {
     $destination = Join-Path $sourceRoot $Name
@@ -157,17 +191,18 @@ function Get-PinnedSource([string]$Name, [string]$Repository, [string]$Commit) {
 $opencvSource = Get-PinnedSource 'opencv' $lock.opencv_repository $lock.opencv_commit
 $contribSource = Get-PinnedSource 'opencv_contrib' $lock.contrib_repository $lock.contrib_commit
 $downloadCache = Join-Path $WorkRoot 'opencv-download-cache'
+$buildWorld = if ($isDebug) { 'OFF' } else { 'ON' }
 
 $options = @(
     '-S', $opencvSource, '-B', $buildRoot, '-G', 'Ninja',
     "-DCMAKE_C_COMPILER=$cCompiler", "-DCMAKE_CXX_COMPILER=$cxxCompiler",
     "-DCMAKE_MAKE_PROGRAM=$ninja", "-DCMAKE_INSTALL_PREFIX=$InstallRoot",
-    '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_CXX_STANDARD=17', '-DCMAKE_CXX_STANDARD_REQUIRED=ON',
+    "-DCMAKE_BUILD_TYPE=$Configuration", '-DCMAKE_CXX_STANDARD=17', '-DCMAKE_CXX_STANDARD_REQUIRED=ON',
     '-DCMAKE_POLICY_VERSION_MINIMUM=3.5',
     "-DCMAKE_TLS_CAINFO=$($caBundle.Replace('\', '/'))", '-DCMAKE_TLS_VERIFY=ON',
     "-DOPENCV_EXTRA_MODULES_PATH=$contribSource/modules", "-DOPENCV_DOWNLOAD_PATH=$downloadCache",
     "-DOPENCV_VCSVERSION=$($lock.opencv_version)-$($lock.opencv_commit)",
-    '-DBUILD_SHARED_LIBS=ON', '-DBUILD_opencv_world=ON',
+    '-DBUILD_SHARED_LIBS=ON', "-DBUILD_opencv_world=$buildWorld",
     '-DBUILD_TESTS=OFF', '-DBUILD_PERF_TESTS=OFF', '-DBUILD_EXAMPLES=OFF',
     '-DBUILD_DOCS=OFF', '-DBUILD_opencv_apps=ON', '-DBUILD_JAVA=OFF',
     '-DBUILD_opencv_python2=OFF', '-DBUILD_opencv_python3=OFF',
@@ -178,6 +213,7 @@ $options = @(
     '-DWITH_OPENCL=ON', '-DWITH_IPP=OFF', '-DWITH_CUDA=OFF', '-DWITH_CUDNN=OFF',
     '-DWITH_DIRECTML=OFF', '-DWITH_OBSENSOR=OFF', '-DWITH_VTK=OFF', '-DWITH_LAPACK=OFF'
 )
+if ($pythonEnabled) { $options += $pythonConfig.cmake_options }
 $options | ConvertTo-Json | Set-Content (Join-Path $logRoot 'cmake-options.json') -Encoding utf8NoBOM
 Invoke-NativeLogged $cmake $options 'configure.log'
 $configureText = Get-Content (Join-Path $logRoot 'configure.log') -Raw
@@ -187,16 +223,66 @@ if ($configureText -notmatch '(?m)FFMPEG:\s+YES\b') {
 if ($configureText -notmatch '(?m)Parallel framework:\s+OpenMP\b') {
     throw 'The requested OpenMP backend was not enabled; inspect configure.log.'
 }
+if ($configureText -notmatch "(?m)Configuration:\s+$Configuration\s*$") {
+    throw "OpenCV did not configure the requested $Configuration build."
+}
+if ($pythonEnabled -and $configureText -notmatch '(?m)To be built:[^\r\n]*\bpython3\b') {
+    throw 'The requested Python 3 bindings were not enabled; inspect configure.log.'
+}
+if ($isDebug) {
+    # Preserve the native GNU Debug defaults. Do not strip symbols or substitute
+    # a Release/RelWithDebInfo build for this independent Debug SDK.
+    $cache = Get-Content -LiteralPath (Join-Path $buildRoot 'CMakeCache.txt') -Raw
+    foreach ($language in @('C', 'CXX')) {
+        $flagMatch = [regex]::Match($cache, "(?m)^CMAKE_${language}_FLAGS_DEBUG:STRING=(.*)$")
+        if (-not $flagMatch.Success -or $flagMatch.Groups[1].Value -notmatch '(?:^|\s)-g(?:2|3)?(?:\s|$)' -or
+            $flagMatch.Groups[1].Value -match '(?:^|\s)-g0(?:\s|$)') {
+            throw "The GNU $language Debug flags must retain full debug information: $($flagMatch.Value)"
+        }
+    }
+}
 Invoke-NativeLogged $cmake @('--build', $buildRoot, '--parallel', "$ParallelJobs") 'build.log'
-Invoke-NativeLogged $cmake @('--install', $buildRoot, '--config', 'Release') 'install.log'
+Invoke-NativeLogged $cmake @('--install', $buildRoot, '--config', $Configuration) 'install.log'
+if ($pythonEnabled) {
+    $pythonExtensions = @(Get-ChildItem -LiteralPath (Join-Path $InstallRoot 'python/cv2') -Recurse -File -Filter '*.pyd')
+    $expectedExtension = 'cv2' + $pythonConfig.python.extension_suffix
+    if ($pythonExtensions.Count -ne 1 -or $pythonExtensions[0].Name -ne $expectedExtension) {
+        throw "The installed Python extension must be exactly $expectedExtension."
+    }
+}
 
 $worldDlls = @(Get-ChildItem -LiteralPath $InstallRoot -Recurse -File -Filter '*opencv_world*.dll')
-if ($worldDlls.Count -ne 1) { throw "Expected exactly one installed Release world DLL, found $($worldDlls.Count)." }
-$opencvBinDir = $worldDlls[0].DirectoryName
+$debugDllNames = @()
+if ($isDebug) {
+    if ($worldDlls.Count -ne 0) { throw 'The standalone Debug SDK must use modular DLLs, not opencv_world.' }
+    $debugDlls = @(Get-ChildItem -LiteralPath $InstallRoot -Recurse -File -Filter '*opencv_*d.dll' |
+        Where-Object { $_.Name -match '^(?:lib)?opencv_[a-z0-9_]+[0-9]+d\.dll$' })
+    foreach ($module in @('core', 'imgproc', 'imgcodecs', 'videoio')) {
+        $found = @($debugDlls | Where-Object { $_.Name -match "^(?:lib)?opencv_${module}[0-9]+d\.dll$" })
+        if ($found.Count -ne 1) { throw "Expected one installed Debug $module DLL, found $($found.Count)." }
+        if ($module -eq 'core') { $opencvBinDir = $found[0].DirectoryName }
+    }
+    $objdump = Join-Path $toolchainBin 'objdump.exe'
+    foreach ($dll in $debugDlls) {
+        if ($dll.DirectoryName -ne $opencvBinDir) { throw 'Debug module DLLs must share one runtime directory.' }
+        $sections = (& $objdump '-h' $dll.FullName 2>&1 | Out-String)
+        if ($LASTEXITCODE -ne 0 -or $sections -notmatch '\.debug_info\b' -or $sections -notmatch '\.debug_line\b') {
+            throw "Debug symbols or source line information are missing from $($dll.Name)."
+        }
+    }
+    $debugDllNames = @($debugDlls | ForEach-Object Name | Sort-Object)
+    $debugDllNames | Set-Content (Join-Path $logRoot 'debug-symbol-dlls.txt') -Encoding utf8NoBOM
+} else {
+    if ($worldDlls.Count -ne 1) { throw "Expected exactly one installed Release world DLL, found $($worldDlls.Count)." }
+    $opencvBinDir = $worldDlls[0].DirectoryName
+}
 $configFiles = @(Get-ChildItem -LiteralPath $InstallRoot -Recurse -File -Filter 'OpenCVConfig.cmake' |
     Where-Object { Test-Path -LiteralPath (Join-Path $_.DirectoryName 'OpenCVModules.cmake') })
 if ($configFiles.Count -ne 1) { throw "Expected one concrete installed OpenCV CMake package, found $($configFiles.Count)." }
 $opencvCMakeDir = $configFiles[0].DirectoryName
+if (-not (Test-Path -LiteralPath (Join-Path $opencvCMakeDir "OpenCVModules-$($Configuration.ToLowerInvariant()).cmake"))) {
+    throw "The installed CMake package has no $Configuration import configuration."
+}
 
 $metadataRoot = Join-Path $InstallRoot 'build-info'
 New-Item -ItemType Directory -Force -Path $metadataRoot | Out-Null
@@ -207,6 +293,20 @@ foreach ($name in @('toolchain-sha256.txt', 'toolchain-patch.json', 'toolchain-s
 foreach ($name in @('CMakeCache.txt', 'CMakeDownloadLog.txt')) {
     $file = Join-Path $buildRoot $name
     if (Test-Path -LiteralPath $file) { Copy-Item -LiteralPath $file -Destination $metadataRoot }
+}
+$configureDiagnostic = Join-Path $buildRoot 'CMakeFiles/CMakeConfigureLog.yaml'
+if (Test-Path -LiteralPath $configureDiagnostic) {
+    Copy-Item -LiteralPath $configureDiagnostic -Destination $metadataRoot
+    Copy-Item -LiteralPath $configureDiagnostic -Destination $logRoot
+}
+if ($isDebug) {
+    foreach ($name in @('debug-symbol-dlls.txt', 'gdb-version.txt')) {
+        Copy-Item -LiteralPath (Join-Path $logRoot $name) -Destination $metadataRoot
+    }
+}
+if ($pythonEnabled) {
+    Copy-Item -LiteralPath $pythonConfig.config_path -Destination $metadataRoot
+    Copy-Item -LiteralPath $pythonConfig.python.pip_report -Destination $metadataRoot
 }
 if (Test-Path -LiteralPath $downloadCache) {
     $cacheHashLines = foreach ($file in Get-ChildItem -LiteralPath $downloadCache -Recurse -File | Sort-Object FullName) {
@@ -235,12 +335,23 @@ $state = [ordered]@{
     lock_file = $LockFile
     build_root = $buildRoot
     build_log_dir = $logRoot
-    configuration = 'Release'
+    build_tree_removed = [bool]$CleanupBuild
+    configuration = $Configuration
+    toolchain_kind = 'mingw'
+    python_bindings = $pythonEnabled
+    python = if ($pythonEnabled) { $pythonConfig.python } else { $null }
+    library_layout = if ($isDebug) { 'modular' } else { 'world' }
+    debug_symbols = if ($isDebug) { 'embedded-dwarf' } else { 'not-requested' }
+    debug_symbol_dlls = $debugDllNames
     requested_parallel_backend = 'OpenMP'
     requested_ffmpeg = $true
     native_smoke_test_completed = $false
 }
 $statePath = Join-Path $WorkRoot 'build-state.json'
 $state | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $statePath -Encoding utf8NoBOM
+if ($CleanupBuild) {
+    Remove-Item -LiteralPath $buildRoot -Recurse -Force
+    Write-Host 'Removed the completed build object tree; installed SDK, sources and diagnostic logs are retained.'
+}
 if ($env:GITHUB_OUTPUT) { "state_file=$statePath" | Out-File -LiteralPath $env:GITHUB_OUTPUT -Append -Encoding utf8 }
 Write-Host "Build installed at $InstallRoot. Package and runtime validation are the next stages."

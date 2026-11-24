@@ -3,6 +3,8 @@
 param(
     [string]$OpenCVVersion = 'latest',
     [string]$WinLibsVersion = 'latest',
+    [ValidateSet('Release', 'Debug')][string]$Configuration = 'Release',
+    [ValidatePattern('^$|^3\.(12|13|14)$')][string]$PythonVersion = '',
     [Parameter(Mandatory)][string]$OutputPath
 )
 
@@ -93,10 +95,19 @@ if ($asset.PSObject.Properties.Name -contains 'digest' -and $asset.digest -match
 }
 
 $packageName = "opencv-$opencvTag-mingw-$mingwVersion-gcc-$gccVersion-x64"
+if ($Configuration -eq 'Debug') {
+    if ($PythonVersion) { throw 'The standalone Debug SDK does not require a debug CPython interpreter; use the Release Python package.' }
+    $packageName += '-debug'
+} elseif ($PythonVersion) {
+    $packageName += '-py' + $PythonVersion.Replace('.', '')
+}
 $lock = [ordered]@{
     schema_version = 1
     resolved_at_utc = [DateTime]::UtcNow.ToString('o')
     package_name = $packageName
+    configuration = $Configuration
+    python_bindings = [bool]$PythonVersion
+    python_version = $PythonVersion
     opencv_version = $opencvTag
     opencv_commit = $opencvCommit
     opencv_repository = 'https://github.com/opencv/opencv.git'

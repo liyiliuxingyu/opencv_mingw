@@ -59,7 +59,7 @@ function New-PackageZip {
 }
 
 function Copy-RuntimeDependencies {
-    param([string] $InstallRoot, [string] $BinaryDir, [string] $ToolchainRoot)
+    param([string] $InstallRoot, [string] $BinaryDir, [string] $ToolchainRoot, [string[]] $ExternalDlls = @())
     $objdump = Join-Path $ToolchainRoot 'bin/objdump.exe'
     if (-not (Test-Path -LiteralPath $objdump -PathType Leaf)) {
         throw "The selected toolchain has no objdump.exe: $objdump"
@@ -91,7 +91,7 @@ function Copy-RuntimeDependencies {
         $toolchainDlls[$file.Name] = $file.FullName
     }
     $queue = [Collections.Generic.Queue[string]]::new()
-    foreach ($file in Get-ChildItem -LiteralPath $InstallRoot -File -Recurse | Where-Object { $_.Extension -in '.dll', '.exe' }) {
+    foreach ($file in Get-ChildItem -LiteralPath $InstallRoot -File -Recurse | Where-Object { $_.Extension -in '.dll', '.exe', '.pyd' }) {
         $queue.Enqueue($file.FullName)
     }
     $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -104,6 +104,7 @@ function Copy-RuntimeDependencies {
         foreach ($match in [regex]::Matches($details, '(?im)^\s*DLL Name:\s*(\S+)\s*$')) {
             $name = $match.Groups[1].Value
             if ($systemDlls.Contains($name) -or $name -match '^(api-ms-win-|ext-ms-win-)') { continue }
+            if ($name -in $ExternalDlls) { continue }
             $destination = Join-Path $BinaryDir $name
             if (Test-Path -LiteralPath $destination -PathType Leaf) {
                 $queue.Enqueue($destination)
@@ -135,6 +136,30 @@ foreach ($name in @('package_name', 'opencv_version', 'gcc_version', 'mingw_vers
 }
 $packageName = [string] $state.package_name
 if ($packageName -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$') { throw 'Invalid package_name in build state.' }
+$configuration = if ($state.PSObject.Properties['configuration']) { [string]$state.configuration } else { 'Release' }
+if ($configuration -notin @('Release', 'Debug')) { throw 'Unsupported SDK configuration in build state.' }
+$configuration = if ($configuration -eq 'Debug') { 'Debug' } else { 'Release' }
+$isDebug = $configuration -eq 'Debug'
+if ($isDebug -and $packageName -notmatch '-debug$') { throw 'Debug must have a separate package name ending in -debug.' }
+if (-not $isDebug -and $packageName -match '-debug$') { throw 'Release must not use a Debug package name.' }
+$libraryLayout = if ($isDebug) { 'modular' } else { 'world' }
+$debugSymbols = if ($isDebug) { 'embedded-dwarf' } else { 'not-requested' }
+$pythonEnabled = $state.PSObject.Properties['python_bindings'] -and [bool]$state.python_bindings
+$pythonExternalDlls = @()
+if ($pythonEnabled) {
+    if ($isDebug -or -not $state.PSObject.Properties['python'] -or $state.python.major_minor -notmatch '^3\.(12|13|14)$') {
+        throw 'Python packages require Release and exact supported CPython metadata.'
+    }
+    $pythonExternalDlls = @(('python' + $state.python.major_minor.Replace('.', '') + '.dll'), 'python3.dll')
+    if (-not (Test-Path -LiteralPath (Join-Path $PackageRoot 'install-python.cmd') -PathType Leaf)) {
+        throw 'Prepare the relocatable Python SDK and included wheel before packaging.'
+    }
+}
+$lock = Get-Content -LiteralPath $state.lock_file -Raw | ConvertFrom-Json
+if ($lock.package_name -ne $packageName -or
+    ($lock.PSObject.Properties['configuration'] -and $lock.configuration -ne $configuration)) {
+    throw 'The source lock and build state describe different packages or configurations.'
+}
 if ([string] $state.opencv_version -notmatch '^\d+\.\d+\.\d+$') { throw 'Only stable numeric OpenCV versions can be packaged.' }
 if ([string] $state.gcc_version -notmatch '^\d+\.\d+(\.\d+)?$') { throw 'Invalid GCC version in build state.' }
 
@@ -149,7 +174,20 @@ $cmakeRelative = Get-ContainedRelativePath $PackageRoot $cmakeDir
 if (-not (Test-Path -LiteralPath (Join-Path $cmakeDir 'OpenCVConfig.cmake') -PathType Leaf)) {
     throw 'The staged OpenCV CMake package is missing.'
 }
-$runtimeDlls = @(Copy-RuntimeDependencies -InstallRoot $installRoot -BinaryDir $binaryDir -ToolchainRoot $toolchainSource)
+if (-not (Test-Path -LiteralPath (Join-Path $cmakeDir "OpenCVModules-$($configuration.ToLowerInvariant()).cmake") -PathType Leaf)) {
+    throw "The installed SDK has no $configuration CMake import configuration."
+}
+if ($isDebug) {
+    foreach ($module in @('core', 'imgproc', 'imgcodecs', 'videoio')) {
+        $dlls = @(Get-ChildItem -LiteralPath $binaryDir -File -Filter "*opencv_${module}*d.dll" |
+            Where-Object { $_.Name -match "^(?:lib)?opencv_${module}[0-9]+d\.dll$" })
+        if ($dlls.Count -ne 1) { throw "The Debug package must contain exactly one $module Debug DLL." }
+    }
+    if (@(Get-ChildItem -LiteralPath $binaryDir -File -Filter '*opencv_world*.dll').Count -ne 0) {
+        throw 'The standalone Debug package requires modular OpenCV libraries.'
+    }
+}
+$runtimeDlls = @(Copy-RuntimeDependencies -InstallRoot $installRoot -BinaryDir $binaryDir -ToolchainRoot $toolchainSource -ExternalDlls $pythonExternalDlls)
 
 $toolchainDestination = Join-Path $PackageRoot 'mingw64'
 if (Test-Path -LiteralPath $toolchainDestination) {
@@ -171,6 +209,26 @@ if (-not (Test-Path -LiteralPath (Join-Path $exampleSource 'CMakeLists.txt') -Pa
 $examplesRoot = Join-Path $PackageRoot 'examples'
 New-Item -ItemType Directory -Path $examplesRoot -Force | Out-Null
 Copy-Item -LiteralPath $exampleSource -Destination $examplesRoot -Recurse -Force
+if ($pythonEnabled) { Copy-Item -LiteralPath (Join-Path $repoRoot 'examples/python') -Destination $examplesRoot -Recurse -Force }
+
+$pythonInstructions = if ($pythonEnabled) {
+    @"
+PYTHON CV2
+
+This package contains cv2 for regular 64-bit CPython $($state.python.major_minor).
+Install that Python version, then run install-python.cmd. It creates an isolated
+virtual environment under LocalAppData\OpenCV-SDK\python-envs and installs the
+included wheel with its exact NumPy dependency. An internet connection is needed
+to download NumPy. CPU and CUDA wheels both import as cv2: use separate environments.
+
+The relocatable source-built loader is under opencv\python\cv2. The included
+wheel can also be installed directly with the matching Python interpreter:
+
+  py -$($state.python.major_minor) -m pip install "python-wheel\$([IO.Path]::GetFileName($state.python_wheel_path))"
+"@
+} else {
+    'This C++ SDK does not include a Python cv2 extension. Use the separate Release Python edition for regular CPython.'
+}
 
 $replacements = @{
     '@OPENCV_VERSION@' = [string] $state.opencv_version
@@ -178,6 +236,10 @@ $replacements = @{
     '@PACKAGE_NAME@' = $packageName
     '@OPENCV_BIN_DIR@' = $binaryRelative
     '@OPENCV_CMAKE_DIR@' = $cmakeRelative
+    '@BUILD_CONFIGURATION@' = $configuration
+    '@LIBRARY_LAYOUT@' = $libraryLayout
+    '@DEBUG_SYMBOLS@' = $debugSymbols
+    '@PYTHON_INSTRUCTIONS@' = $pythonInstructions
 }
 foreach ($name in @('activate.cmd', 'build-example.cmd', 'README.txt')) {
     $text = Get-Content -LiteralPath (Join-Path $repoRoot "packaging/templates/$name.in") -Raw
@@ -185,7 +247,6 @@ foreach ($name in @('activate.cmd', 'build-example.cmd', 'README.txt')) {
     Write-Text (Join-Path $PackageRoot $name) ($text -replace '\r?\n', "`r`n")
 }
 
-$lock = Get-Content -LiteralPath $state.lock_file -Raw | ConvertFrom-Json
 Write-Text (Join-Path $PackageRoot 'build-lock.json') ($lock | ConvertTo-Json -Depth 30)
 $metadata = [ordered]@{
     schema_version = 1
@@ -198,9 +259,12 @@ $metadata = [ordered]@{
     runtime = 'ucrt'
     threading = 'posix'
     exceptions = 'seh'
-    configuration = 'Release'
+    configuration = $configuration
+    library_layout = $libraryLayout
+    debug_symbols = $debugSymbols
     shared_libraries = $true
-    python_bindings = $false
+    python_bindings = [bool]$pythonEnabled
+    toolchain_kind = 'mingw'
     packaged_at_utc = [DateTime]::UtcNow.ToString('o')
     opencv_bin_dir = $binaryRelative.Replace('\', '/')
     opencv_cmake_dir = $cmakeRelative.Replace('\', '/')
@@ -210,6 +274,7 @@ $metadata = [ordered]@{
     opencv_build_summary = ($installRelative.Replace('\', '/') + '/build-info/configure.log')
     project_url = 'https://github.com/liyiliuxingyu/opencv_mingw'
 }
+if ($pythonEnabled) { $metadata['python'] = $state.python }
 $configureLog = Join-Path $installRoot 'build-info/configure.log'
 if (Test-Path -LiteralPath $configureLog -PathType Leaf) {
     $configureText = Get-Content -LiteralPath $configureLog -Raw
@@ -222,6 +287,12 @@ if (Test-Path -LiteralPath $configureLog -PathType Leaf) {
 }
 foreach ($name in @('opencv_commit', 'contrib_commit')) {
     if ($state.PSObject.Properties[$name]) { $metadata[$name] = [string] $state.$name }
+}
+if ($isDebug) {
+    if (-not $state.PSObject.Properties['debug_symbol_dlls'] -or @($state.debug_symbol_dlls).Count -eq 0) {
+        throw 'Debug symbol validation is missing from the completed build state.'
+    }
+    $metadata['debug_symbol_dlls'] = @($state.debug_symbol_dlls)
 }
 Write-Text (Join-Path $PackageRoot 'build-info.json') ($metadata | ConvertTo-Json -Depth 20)
 $licenseText = @'
@@ -276,10 +347,19 @@ if (-not $IsccPath -or -not (Test-Path -LiteralPath $IsccPath -PathType Leaf)) {
 Invoke-Checked -File $IsccPath -Arguments @(
     "/DPackageDir=$PackageRoot", "/DOutputDir=$OutputDir", "/DPackageName=$packageName",
     "/DOpenCVVersion=$($state.opencv_version)", "/DGccVersion=$($state.gcc_version)",
+    "/DBuildConfiguration=$configuration",
+    "/DPythonEnabled=$([int][bool]$pythonEnabled)",
+    "/DPythonAbi=$(if ($pythonEnabled) { $state.python.abi } else { 'none' })",
     (Join-Path $repoRoot 'packaging/opencv-mingw.iss')
 )
 if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf)) { throw 'Inno Setup did not create the expected installer.' }
 New-PackageZip -Source $PackageRoot -Destination $zipPath -TopLevelName $packageName
+foreach ($path in @($zipPath, $installerPath)) {
+    $size = (Get-Item -LiteralPath $path).Length
+    if ($size -ge 2GB) {
+        throw "Release asset must be smaller than 2 GiB: $path ($size bytes). Debug symbols have not been stripped."
+    }
+}
 
 $infoPath = Join-Path $OutputDir "$packageName-build-info.json"
 $lockPath = Join-Path $OutputDir "$packageName-build-lock.json"
@@ -302,6 +382,11 @@ $result = [ordered]@{
     gcc_version = [string] $state.gcc_version
     mingw_version = [string] $state.mingw_version
     winlibs_version = [string] $state.winlibs_version
+    configuration = $configuration
+    toolchain_kind = 'mingw'
+    python_bindings = [bool]$pythonEnabled
+    library_layout = $libraryLayout
+    debug_symbols = $debugSymbols
 }
 Write-Text (Join-Path $OutputDir 'package-result.json') ($result | ConvertTo-Json -Depth 10)
 if ($env:GITHUB_OUTPUT) {
