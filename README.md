@@ -33,7 +33,7 @@
 | `mingw-debug` | 同版本 WinLibs GCC，真正 Debug，独立模块 DLL | 无；不要求 Debug Python | 独立 EXE、ZIP，包含 DWARF 符号和 GDB |
 | `cuda-release-python` | Visual Studio 2022 MSVC，Release，CUDA 模块 DLL | 与所选 CPython 版本一致 | 独立 EXE、ZIP、`opencv_cuda-…whl` |
 
-`build_debug`、`build_cuda` 可分别关闭。关闭 `build_mingw` 可跳过全部 MinGW 产物，仅运行 CUDA；这样单项重试不必重编其他正在运行的版本。默认 CUDA 为 **13.5.0**、cuDNN 为 **9.28.1**；这两项使用显式版本，不随 OpenCV 的 `latest` 隐式变化。下载来自 NVIDIA 官方 redistribution，逐项验证 SHA-256。默认 GPU 架构为 `7.5;8.0;8.6;8.9;9.0`，另包含 `9.0` PTX；CUDA 13 不接受低于 7.5 的目标。需要其他 GPU 架构时修改 `cuda_arch_bin`，构建会先向 nvcc 核对支持范围。
+`build_python`、`build_debug`、`build_cuda` 分别控制 CPU Python、Debug、CUDA 三种产物，至少选择一项。每种版本都能单独运行，不必重编其他正在运行的版本。默认 CUDA 为 **13.5.0**、cuDNN 为 **9.28.1**；这两项使用显式版本，不随 OpenCV 的 `latest` 隐式变化。下载来自 NVIDIA 官方 redistribution，逐项验证 SHA-256。默认 GPU 架构为 `7.5;8.0;8.6;8.9;9.0`，另包含 `9.0` PTX；CUDA 13 不接受低于 7.5 的目标。需要其他 GPU 架构时修改 `cuda_arch_bin`，构建会先向 nvcc 核对支持范围。
 
 Windows CUDA 路线使用 NVIDIA 支持的 MSVC host compiler，不能把 MinGW C++ ABI 与 MSVC CUDA 库混用。CUDA SDK 不包含 Visual Studio 编译器、GPU 驱动或完整 CUDA Toolkit。C++ 用户需安装匹配的 VS 2022 C++ Build Tools、CUDA/cuDNN、CMake/Ninja；Python wheel 使用精确版本的 NVIDIA pip 运行库依赖。默认不构建需要另行提供 NVIDIA Video Codec SDK 的 `cudacodec`。
 
@@ -66,6 +66,8 @@ cmake --build build-debug --parallel 2
 ```
 
 Debug 使用模块化 `*opencv_*d.dll`、对应导入库及原生 `-g` 调试信息；不会用 Release 或 RelWithDebInfo 代替。验证会检查 CMake 的真实 DEBUG 导入目标、运行时配置、DWARF/source-line 节，以及 GDB 能否定位 OpenCV 函数的源码行。OpenCV 源码未随包复制，可按 `build-lock.json` 的精确提交获取，并用 GDB `set substitute-path` 映射本地源码目录。
+
+Debug 版使用 `CV_DISABLE_OPTIMIZATION=ON` 和空 `CPU_DISPATCH`，关闭 OpenCV 显式 SIMD 优化与 CPU dispatch，保留 `-O0` 和调试符号。这一配置用于源码调试，并规避此次原生测试在 GCC 16.2 / Win64 SEH 的未优化 AVX2 路径中复现的访问冲突；Release 版仍保留优化。该设置是 OpenCV 支持的调试构建方式，见 [CPU 优化构建选项](https://github.com/opencv/opencv/wiki/CPU-optimizations-build-options)；相关编译器对齐问题见 [GCC PR54412 讨论](https://gcc.gnu.org/pipermail/gcc-patches/2026-September/731227.html)。Debug 包仍需通过原有图像、FFmpeg、OpenMP 和 GDB 验证。
 
 ### CUDA 验证边界
 
