@@ -235,7 +235,16 @@ foreach ($name in @('CMAKE_CUDA_COMPILER', 'CUDNN_LIBRARY', 'CUDNN_INCLUDE_DIR',
 }
 if ((Get-CacheValue 'CMAKE_BUILD_TYPE' $cacheText) -ne $Configuration) { throw 'CMake selected an unexpected configuration.' }
 if ((Get-CacheValue 'OPENCV_DNN_CUDA' $cacheText) -ne 'ON') { throw 'The DNN CUDA backend was not enabled.' }
-if ((Get-CacheValue 'CUDNN_VERSION' $cacheText) -ne $CudnnVersion) { throw 'CMake detected a different cuDNN version.' }
+# OpenCV's FindCUDNN reads the selected header into three INTERNAL cache
+# entries. Its combined CUDNN_VERSION is a normal variable, not a cache entry.
+$detectedCudnnVersion = (@('MAJOR', 'MINOR', 'PATCH') | ForEach-Object {
+    Get-CacheValue "CUDNN_VERSION_$_" $cacheText
+}) -join '.'
+$reportedCudnnVersion = [regex]::Match($configureText, '(?m)cuDNN:\s+YES\s+\(ver\s+(\d+\.\d+\.\d+)\)')
+if ($detectedCudnnVersion -ne $CudnnVersion -or -not $reportedCudnnVersion.Success -or
+    $reportedCudnnVersion.Groups[1].Value -ne $detectedCudnnVersion) {
+    throw 'The detected cuDNN header version and configure summary must both match the pinned version.'
+}
 $configuredHeader = Get-Content -LiteralPath (Join-Path $buildRoot 'cvconfig.h') -Raw
 foreach ($feature in @('HAVE_CUDA', 'HAVE_CUDNN')) {
     if ($configuredHeader -notmatch ('(?m)^#define\s+' + $feature + '\b')) { throw "Generated cvconfig.h does not enable $feature" }
