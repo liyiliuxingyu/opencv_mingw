@@ -225,6 +225,10 @@ if ($cudnnHeaders.Count -ne 1 -or $cudnnLibraries.Count -ne 1) { throw 'Expected
 $runtimeDirs = @(Get-ChildItem -LiteralPath $cudaRoot, $cudnnRoot -Recurse -File -Filter '*.dll' |
     Where-Object { $_.FullName -notlike '*\nvvm\*' } | ForEach-Object { $_.DirectoryName } | Sort-Object -Unique)
 if ($runtimeDirs.Count -eq 0) { throw 'No CUDA/cuDNN runtime DLL directories were extracted.' }
+# Component records are dictionaries. Measure-Object -Property does not read
+# their keys under StrictMode, so sum the recorded Int64 byte counts directly.
+$installedBytes = [long]0
+foreach ($component in $components) { $installedBytes += [long]$component['installed_bytes'] }
 $state = [ordered]@{
     schema_version = 1
     cuda_version = $CudaVersion
@@ -239,7 +243,7 @@ $state = [ordered]@{
     runtime_bin_dirs = $runtimeDirs
     python_runtime_packages = $pythonPackages
     lock_file = $lockPath
-    installed_bytes = [long](($components | Measure-Object -Property installed_bytes -Sum).Sum)
+    installed_bytes = $installedBytes
 }
 $statePath = Join-Path $WorkRoot 'cuda-state.json'
 $state | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $statePath -Encoding utf8NoBOM
