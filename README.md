@@ -115,6 +115,17 @@ Debug 版使用 `CV_DISABLE_OPTIMIZATION=ON` 和空 `CPU_DISPATCH`，关闭 Open
 
 Python、Debug、CUDA 扩展产物使用各自的 `opencv-extended-candidate-<variant>-<运行ID>-<重试编号>` 候选工件。对应 **Verify an extended OpenCV candidate** 工作流要求选择原运行、重试编号和产物类型；CUDA 恢复会重新取得锁定的官方 toolkit 用于验证消费者，但不重新编译 OpenCV。恢复同样不会修改原 ZIP、EXE 或 wheel。
 
+### 验证成功后的附件发布恢复
+
+如果扩展产物已通过全部验证并上传 `opencv-verified-…`，但自动创建 Release 返回权限错误，可以使用 **Upload verified assets to an owner-created draft**。例如，构建期间默认分支的工作流发生变化，GitHub 可能要求默认 `GITHUB_TOKEN` 不具备的 Workflows 写权限才能为旧提交创建 Release；见 [GitHub Release API 权限说明](https://docs.github.com/en/rest/releases/releases#create-a-release)。
+
+1. 在 GitHub Releases 页面创建草稿，Target 选择 `candidate-origin.json` 中的原始 `source_commit`。标签使用 `<package_name>-r<已验证运行ID>-a<重试编号>`。没有实际 GPU 验证记录的 CUDA 草稿必须选择 **Pre-release**。
+2. 运行上述附件上传工作流，填写 `verified_run_id`、`run_attempt`、`variant` 和草稿的完整 `draft_release_tag`。
+3. 工作流核对原运行、通过的验证步骤、工件来源、全部 SHA-256 和测试报告，再向该草稿上传原始附件；重复执行只接受名称、大小和摘要完全一致的已有附件。
+4. 附件上传与摘要核对成功后，在 GitHub 页面发布草稿。
+
+该恢复流程不重新编译，也不改变二进制对应的源码提交。上传工作流只写入附件，不创建或修改 Release、标签或发布状态；不需要另行提供个人令牌。原 Actions 工件必须仍在保留期内。
+
 ## 安装和使用
 
 ### EXE 安装版
