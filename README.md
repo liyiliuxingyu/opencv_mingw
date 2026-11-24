@@ -2,6 +2,7 @@
 
 [![Windows build](https://github.com/liyiliuxingyu/opencv_mingw/actions/workflows/build-windows.yml/badge.svg)](https://github.com/liyiliuxingyu/opencv_mingw/actions/workflows/build-windows.yml)
 [![Python CUDA Debug](https://github.com/liyiliuxingyu/opencv_mingw/actions/workflows/build-extended.yml/badge.svg)](https://github.com/liyiliuxingyu/opencv_mingw/actions/workflows/build-extended.yml)
+[![Auto update downloads](https://github.com/liyiliuxingyu/opencv_mingw/actions/workflows/auto-update-windows.yml/badge.svg)](https://github.com/liyiliuxingyu/opencv_mingw/actions/workflows/auto-update-windows.yml)
 
 使用 GitHub Actions，从 **OpenCV 最新稳定版及同版本 contrib 源码**构建 Windows x64 C++ SDK，搭配 **WinLibs 最新稳定版的 GCC / MinGW-w64 工具链**，生成便携 ZIP 和 EXE 安装程序。
 
@@ -9,6 +10,30 @@
 - [查看构建或手动运行（Actions）](https://github.com/liyiliuxingyu/opencv_mingw/actions/workflows/build-windows.yml)
 
 首次构建只有在 Windows 编译、运行、ZIP 搬迁、安装和卸载检查全部通过后才会发布。具体版本和检查结果以 Release 附件 `build-lock.json`、`build-info.json`、`verification.json` 为准。
+
+## 最新 Windows 安装文件
+
+<!-- WINDOWS-DOWNLOADS:START -->
+
+| 版本 | OpenCV / 工具链 | 状态 | EXE | ZIP | wheel | SHA-256 | Release |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| MinGW Release + Python | 5.1.0 / GCC 16.2.0 / MinGW 14.0.0 | 已验证发布 | [EXE](https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-r45320873434-a1/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-setup.exe) | [ZIP](https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-r45320873434-a1/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313.zip) | [CPython 3.13](https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-r45320873434-a1/opencv_mingw-5.1.0-cp313-cp313-win_amd64.whl) | [SHA256SUMS](https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-r45320873434-a1/SHA256SUMS) | [详情](https://github.com/liyiliuxingyu/opencv_mingw/releases/tag/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-r45320873434-a1) |
+| MinGW Debug C++ | 5.1.0 / GCC 16.2.0 / MinGW 14.0.0 | 已验证发布 | [EXE](https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-r45324144625-a1/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-setup.exe) | [ZIP](https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-r45324144625-a1/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug.zip) | — | [SHA256SUMS](https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-r45324144625-a1/SHA256SUMS) | [详情](https://github.com/liyiliuxingyu/opencv_mingw/releases/tag/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-r45324144625-a1) |
+| MSVC CUDA + Python | — | 暂无已验证发布 | — | — | — | — | — |
+
+下载入口跟随自动维护配置，按已验证的 OpenCV、工具链版本和原始构建运行排序更新。CUDA 的 GPU 验证状态见上表；未验证 GPU 的版本只作为预发布提供。[完整版本、来源和文件摘要](docs/downloads.md) · [机器可读索引](docs/latest-windows.json)
+
+<!-- WINDOWS-DOWNLOADS:END -->
+
+### 自动更新方式
+
+**每种安装包发布成功后自动刷新本页下载入口；每小时第 17 分检查一次上游稳定版本。** OpenCV 或 contrib 有变化时检查三种产物；只有 WinLibs/GCC/MinGW 变化时更新两种 MinGW 产物。未变化、已有对应版本或该类型正在构建时跳过，不重复占用 Windows 编译任务。
+
+固定入口为 [最新 Windows 下载目录](docs/downloads.md)，机器可读记录为 [latest-windows.json](docs/latest-windows.json)。安装文件保存在对应的 GitHub Release；入口只选择已通过验证的 EXE、ZIP 和 wheel，附有原始版本、构建来源与 SHA-256。新版本失败时保留上一份通过验证的下载；CUDA 未完成实际 GPU 验证时保持预发布状态。
+
+自动更新由 [Auto update Windows downloads](https://github.com/liyiliuxingyu/opencv_mingw/actions/workflows/auto-update-windows.yml) 执行。[config/auto-update.json](config/auto-update.json) 控制启用状态、产物、Python 与 CUDA 配置以及失败重试间隔。CUDA/cuDNN 使用明确版本；不会因 MinGW 更新而重复构建 CUDA。已验证但发布失败的产物会被识别为待恢复发布，避免重新编译。
+
+上游版本检测是按小时轮询，构建完成后的入口刷新由事件触发；GitHub 的排队与编译时间仍会产生延迟，因此不承诺秒级更新。公开仓库长期无活动时，GitHub 可能停用定时工作流，具体规则见 [GitHub 定时工作流说明](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)。也可随时手动运行维护工作流；取消 `dispatch_builds` 仅生成判断报告，不启动构建。
 
 ## 安装包包含什么
 
@@ -75,7 +100,7 @@ Debug 版使用 `CV_DISABLE_OPTIMIZATION=ON` 和空 `CPU_DISPATCH`，关闭 Open
 
 当没有实际 GPU 执行记录时，CUDA 包标记为 **Pre-release**，不会取代正式 CPU Release。`verification.json` 明确记录 GPU 测试状态。在目标显卡机器上，C++ 用户可运行 CUDA SDK 的 `build-example.cmd`；其中 GPU 检查要求实际设备可用，并比较 GPU/CPU 运算结果。Python 用户可通过 `cv2.cuda.getCudaEnabledDeviceCount()` 检查设备数量，再运行与自身应用对应的 GPU 测试；仅有 `cv2.cuda` 命名空间不足以证明构建启用了 CUDA。
 
-扩展工作流各产物独立验证和发布，CUDA 失败不会阻止已通过检查的 MinGW 产物发布。扩展工作流由手动运行或修改自身 YAML 触发；修改其他脚本后请手动运行该工作流。没有添加定时构建。
+扩展工作流各产物独立验证和发布，CUDA 失败不会阻止已通过检查的 MinGW 产物发布。扩展工作流可手动运行，也由自动维护流程在版本或已配置参数需要更新时按产物单独触发。修改构建脚本后如需立即重建，请手动运行对应产物。
 
 针对部分 WinLibs GCC 版本在含空格安装目录下拆分 `default-manifest.o` 路径的上游问题，构建会对已知的 GCC specs 表达式应用精确兼容补丁，保留默认 manifest 及原有条件。未受影响的版本保持原样；原始配置、补丁说明和前后 SHA-256 会随构建记录保留。工具链会先在含空格路径下编译并运行小型程序，再开始 OpenCV 构建。也可独立运行 **Verify latest MinGW in paths with spaces** 工作流快速检查最新工具链。
 
@@ -89,7 +114,7 @@ Debug 版使用 `CV_DISABLE_OPTIMIZATION=ON` 和空 `CPU_DISPATCH`，关闭 Open
 4. 默认使用 4 个编译任务；如遇内存不足，可将 `parallel_jobs` 改为 2。
 5. 保持 `publish=true`，所有验证通过后会自动创建 Release。关闭该项则只上传 Actions Artifacts。
 
-修改构建脚本、安装模板或示例并推送到 `master` 也会触发构建。没有设置定时任务。手动运行其他分支会构建并上传 Artifacts，但只允许默认分支发布 Release。
+修改基础构建脚本、安装模板或示例并推送到 `master` 也会触发基础构建。自动维护工作流按小时检查上游版本，避免按固定频率重复全量编译。手动运行其他分支会构建并上传 Artifacts，但只允许默认分支发布 Release。
 
 `latest` 指运行时从 `opencv/opencv` 和 `brechtsanders/winlibs_mingw` 的 GitHub `releases/latest` 解析出的正式发布，不跟随开发分支，也不选择预发布版本。contrib 必须有对应 OpenCV tag；工具链必须提供 x64/POSIX/SEH/UCRT 的 GCC-only 资产和可信的 SHA-256，缺失时构建会明确失败。
 
