@@ -110,11 +110,12 @@ void check_ffmpeg(const fs::path& directory)
 int main(int argc, char** argv)
 {
     try {
-        require(argc >= 2, "Usage: opencv_mingw_smoke OUTPUT_DIR [--expected-version VERSION] [--require-ffmpeg] [--require-openmp]");
+        require(argc >= 2, "Usage: opencv_mingw_smoke OUTPUT_DIR [--expected-version VERSION] [--expected-configuration Release|Debug] [--require-ffmpeg] [--require-openmp]");
         const fs::path output_directory(argv[1]);
         bool require_ffmpeg = false;
         bool require_openmp = false;
         std::string expected_version;
+        std::string expected_configuration = OPENCV_SMOKE_CONFIGURATION;
         for (int i = 2; i < argc; ++i) {
             const std::string option(argv[i]);
             if (option == "--require-ffmpeg") {
@@ -124,6 +125,11 @@ int main(int argc, char** argv)
             } else if (option == "--expected-version") {
                 require(i + 1 < argc, "--expected-version requires a version.");
                 expected_version = argv[++i];
+            } else if (option == "--expected-configuration") {
+                require(i + 1 < argc, "--expected-configuration requires Release or Debug.");
+                expected_configuration = argv[++i];
+                require(expected_configuration == "Release" || expected_configuration == "Debug",
+                        "The expected configuration must be Release or Debug.");
             } else {
                 throw std::runtime_error("Unknown option: " + option);
             }
@@ -144,6 +150,10 @@ int main(int argc, char** argv)
                     && cv::getVersionMinor() == CV_VERSION_MINOR
                     && cv::getVersionRevision() == CV_VERSION_REVISION,
                 "Numeric OpenCV runtime version does not match the headers.");
+        const std::regex configuration("Configuration:[ \\t]*" + expected_configuration + "[ \\t]*[\\r\\n]");
+        require(std::regex_search(build_information, configuration),
+                "The loaded OpenCV DLL configuration does not match the selected SDK configuration.");
+        std::cout << "PASS: OpenCV runtime configuration " << expected_configuration << '\n';
 
         if (require_openmp) {
             const std::regex backend("Parallel framework:[ \\t]*OpenMP", std::regex::icase);
