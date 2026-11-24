@@ -37,6 +37,16 @@
 
 Windows CUDA 路线使用 NVIDIA 支持的 MSVC host compiler，不能把 MinGW C++ ABI 与 MSVC CUDA 库混用。CUDA SDK 不包含 Visual Studio 编译器、GPU 驱动或完整 CUDA Toolkit。C++ 用户需安装匹配的 VS 2022 C++ Build Tools、CUDA/cuDNN、CMake/Ninja；Python wheel 使用精确版本的 NVIDIA pip 运行库依赖。默认不构建需要另行提供 NVIDIA Video Codec SDK 的 `cudacodec`。
 
+OpenCV 5 的新 DNN 引擎目前只支持 CPU；使用 DNN CUDA 时，应在加载模型时选择经典引擎，再选择 CUDA 后端与目标，例如：
+
+```python
+net = cv2.dnn.readNetFromONNX("model.onnx", engine=cv2.dnn.ENGINE_CLASSIC)
+net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
+net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
+```
+
+引擎在模型加载时确定，不能通过之后切换 backend 改变。参见 [OpenCV 官方 FAQ](https://github.com/opencv/opencv/wiki/FAQ) 和 [OpenCV 4 到 5 迁移说明](https://github.com/opencv/opencv/wiki/OpenCV-4-to-5-migration)。模型是否支持 GPU 运算仍需在目标设备上验证。
+
 ### 安装 Python cv2
 
 1. 安装所选版本的普通 **64 位 CPython**，例如 3.13；不使用 free-threaded 或 Debug Python。
