@@ -102,9 +102,13 @@ print('MinGW / CPython C API compile, link and import probe passed.')
 
 $cmakeOptions = @(
     '-DBUILD_opencv_python3=ON', '-DPYTHON3_LIMITED_API=OFF',
-    "-DPYTHON3_EXECUTABLE=$PythonExecutable", "-DPYTHON_DEFAULT_EXECUTABLE=$PythonExecutable",
-    "-DPYTHON3_INCLUDE_DIR=$($python.include_dir)", "-DPYTHON3_LIBRARY=$($python.library)",
-    "-DPYTHON3_NUMPY_INCLUDE_DIRS=$($python.numpy_include_dir)",
+    # OpenCV forwards these through CMake macros that reparse arguments. Native
+    # Windows backslashes (for example \h in hostedtoolcache) become escapes.
+    "-DPYTHON3_EXECUTABLE=$($PythonExecutable.Replace('\', '/'))",
+    "-DPYTHON_DEFAULT_EXECUTABLE=$($PythonExecutable.Replace('\', '/'))",
+    "-DPYTHON3_INCLUDE_DIR=$($python.include_dir.Replace('\', '/'))",
+    "-DPYTHON3_LIBRARY=$($python.library.Replace('\', '/'))",
+    "-DPYTHON3_NUMPY_INCLUDE_DIRS=$($python.numpy_include_dir.Replace('\', '/'))",
     '-DOPENCV_PYTHON3_INSTALL_PATH=python', '-DPYTHON3_PACKAGES_PATH=python',
     '-DOPENCV_SKIP_PYTHON_LOADER=OFF'
 )

@@ -118,6 +118,12 @@ For Python: run install-python.cmd. It requires matching 64-bit CPython and netw
 The included wheel installs exact NVIDIA runtime wheel dependencies into a new isolated virtual environment.
 Do not install multiple distributions providing cv2 into the same Python environment.
 
+For OpenCV 5 DNN CUDA, select the classic engine when loading the model:
+net = cv2.dnn.readNetFromONNX("model.onnx", engine=cv2.dnn.ENGINE_CLASSIC)
+net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
+net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
+The new OpenCV 5 DNN engine currently supports CPU only. Test your model on the target GPU.
+
 CUDA GPU execution requires a compatible NVIDIA GPU and driver. Build and import checks on a CPU-only CI runner
 do not establish GPU correctness or performance. Read verification.json in the Release for actual test coverage.
 CUDA architectures, upstream commits and library versions are recorded in build-lock.json.

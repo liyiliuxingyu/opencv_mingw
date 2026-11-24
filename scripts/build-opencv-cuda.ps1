@@ -149,8 +149,11 @@ __global__ void compiler_check(int* output) { *output = 7; }
 int main() { thrust::tuple<int> value(7); return thrust::get<0>(value) == 7 ? 0 : 1; }
 '@ | Set-Content -LiteralPath $preflightSource -Encoding utf8NoBOM
 $ccclInclude = Join-Path $cuda.cuda_root 'include/cccl'
+# CCCL requires MSVC's standard conforming preprocessor in both CUDA host
+# phases and ordinary C++ translation units that include its headers.
 Invoke-NativeLogged $nvcc @('--std=c++17', '--compiler-bindir', (Split-Path -Parent $compiler),
-    '--cudart', 'shared', '-I', $ccclInclude, ('-arch=sm_' + $binArchitectures[0].Replace('.', '')),
+    '-Xcompiler=/Zc:preprocessor', '--cudart', 'shared', '-I', $ccclInclude,
+    ('-arch=sm_' + $binArchitectures[0].Replace('.', '')),
     $preflightSource, '-o', (Join-Path $preflightRoot 'compiler check.exe')) 'nvcc-preflight.log'
 if (-not (Test-Path -LiteralPath (Join-Path $preflightRoot 'compiler check.exe'))) { throw 'NVCC preflight produced no executable.' }
 
@@ -179,23 +182,29 @@ function Get-PinnedSource([string]$Name, [string]$Repository, [string]$Commit) {
 }
 $opencvSource = Get-PinnedSource 'opencv' $sourceLock.opencv_repository $sourceLock.opencv_commit
 $contribSource = Get-PinnedSource 'contrib' $sourceLock.contrib_repository $sourceLock.contrib_commit
+# OpenCV reparses some cache values in generated CMake code. Forward slashes
+# prevent native Windows paths from becoming invalid escapes such as \h.
+$cmakeCcclInclude = $ccclInclude.Replace('\', '/')
 $options = @(
     '-S', $opencvSource, '-B', $buildRoot, '-G', 'Ninja',
-    "-DCMAKE_MAKE_PROGRAM=$ninja", "-DCMAKE_C_COMPILER=$compiler", "-DCMAKE_CXX_COMPILER=$compiler",
-    "-DCMAKE_CUDA_COMPILER=$nvcc", "-DCMAKE_CUDA_HOST_COMPILER=$compiler",
-    "-DCUDAToolkit_ROOT=$($cuda.cuda_root)", "-DCUDA_PATH=$($cuda.cuda_root)",
-    "-DCMAKE_INSTALL_PREFIX=$InstallRoot", "-DCMAKE_BUILD_TYPE=$Configuration",
+    "-DCMAKE_MAKE_PROGRAM=$($ninja.Replace('\', '/'))",
+    "-DCMAKE_C_COMPILER=$($compiler.Replace('\', '/'))", "-DCMAKE_CXX_COMPILER=$($compiler.Replace('\', '/'))",
+    "-DCMAKE_CUDA_COMPILER=$($nvcc.Replace('\', '/'))", "-DCMAKE_CUDA_HOST_COMPILER=$($compiler.Replace('\', '/'))",
+    "-DCUDAToolkit_ROOT=$($cuda.cuda_root.Replace('\', '/'))", "-DCUDA_PATH=$($cuda.cuda_root.Replace('\', '/'))",
+    "-DCMAKE_INSTALL_PREFIX=$($InstallRoot.Replace('\', '/'))", "-DCMAKE_BUILD_TYPE=$Configuration",
     '-DCMAKE_CXX_STANDARD=17', '-DCMAKE_CUDA_STANDARD=17', '-DCMAKE_CXX_STANDARD_REQUIRED=ON',
-    "-DCMAKE_CUDA_FLAGS_INIT=-I`"$ccclInclude`"", "-DCMAKE_CXX_FLAGS_INIT=/I`"$ccclInclude`"",
+    "-DCMAKE_CUDA_FLAGS_INIT=-Xcompiler=/Zc:preprocessor -I`"$cmakeCcclInclude`"",
+    "-DCMAKE_CXX_FLAGS_INIT=/Zc:preprocessor /I`"$cmakeCcclInclude`"",
     '-DCMAKE_CUDA_RUNTIME_LIBRARY=Shared', '-DBUILD_WITH_STATIC_CRT=OFF',
     '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded$<$<CONFIG:Debug>:Debug>DLL',
     '-DCMAKE_DEBUG_POSTFIX=d', '-DCMAKE_POLICY_VERSION_MINIMUM=3.5',
     "-DCMAKE_TLS_CAINFO=$($caBundle.Replace('\', '/'))", '-DCMAKE_TLS_VERIFY=ON',
-    "-DOPENCV_EXTRA_MODULES_PATH=$contribSource/modules", "-DOPENCV_DOWNLOAD_PATH=$WorkRoot/opencv-download-cache",
+    "-DOPENCV_EXTRA_MODULES_PATH=$($contribSource.Replace('\', '/'))/modules",
+    "-DOPENCV_DOWNLOAD_PATH=$($WorkRoot.Replace('\', '/'))/opencv-download-cache",
     "-DOPENCV_VCSVERSION=$($sourceLock.opencv_version)-$($sourceLock.opencv_commit)",
     '-DWITH_CUDA=ON', '-DENABLE_CUDA_FIRST_CLASS_LANGUAGE=ON', '-DWITH_CUBLAS=ON', '-DWITH_CUFFT=ON',
     '-DWITH_CUDNN=ON', '-DWITH_CUDNNJIT=OFF', '-DOPENCV_DNN_CUDA=ON', '-DCUDA_ENABLE_DELAYLOAD=ON',
-    "-DCUDNN_INCLUDE_DIR=$($cuda.cudnn_include_dir)", "-DCUDNN_LIBRARY=$($cuda.cudnn_library)",
+    "-DCUDNN_INCLUDE_DIR=$($cuda.cudnn_include_dir.Replace('\', '/'))", "-DCUDNN_LIBRARY=$($cuda.cudnn_library.Replace('\', '/'))",
     "-DCUDA_ARCH_BIN=$CudaArchBin", "-DCUDA_ARCH_PTX=$CudaArchPtx",
     '-DWITH_NVCUVID=OFF', '-DWITH_NVCUVENC=OFF', '-DBUILD_opencv_cudacodec=OFF',
     '-DBUILD_SHARED_LIBS=ON', '-DBUILD_opencv_world=OFF', '-DBUILD_TESTS=OFF', '-DBUILD_PERF_TESTS=OFF',
