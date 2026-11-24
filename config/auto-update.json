@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "enabled": true,
+  "python_version": "3.13",
+  "cuda_version": "13.5.0",
+  "cudnn_version": "9.28.1",
+  "cuda_arch_bin": "7.5;8.0;8.6;8.9;9.0",
+  "cuda_arch_ptx": "9.0",
+  "variants": [
+    "mingw-release-python",
+    "mingw-debug",
+    "cuda-release-python"
+  ],
+  "retry_cooldown_hours": 24
+}
