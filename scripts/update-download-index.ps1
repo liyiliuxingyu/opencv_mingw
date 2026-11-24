@@ -315,9 +315,17 @@ function Escape-Markdown([string]$Value) { return $Value.Replace('|', '\|').Repl
 try {
     $indexPath = Join-Path $OutputDirectory 'latest-windows.json'
     $previous = $null
+    $previousGenerated = $null
     if (Test-Path -LiteralPath $indexPath) {
-        $previous = Get-Content -LiteralPath $indexPath -Raw | ConvertFrom-Json -AsHashtable
+        $previousText = Get-Content -LiteralPath $indexPath -Raw
+        $previous = $previousText | ConvertFrom-Json -AsHashtable
         if ($previous['schema_version'] -ne 1 -or $previous['repository'] -cne $Repository) { throw 'The existing index belongs to another schema or repository.' }
+        # ConvertFrom-Json may turn ISO timestamps into DateTime values. Their
+        # next JSON serialization trims fractional zeros, creating a false diff.
+        # Preserve the original string on PowerShell 7.2 and later.
+        $previousDocument = [System.Text.Json.JsonDocument]::Parse($previousText)
+        try { $previousGenerated = $previousDocument.RootElement.GetProperty('generated_at_utc').GetString() }
+        finally { $previousDocument.Dispose() }
     }
     $candidates = [Collections.Generic.List[object]]::new()
     $variants = [ordered]@{}; foreach ($channel in $channels) { $variants[$channel] = $null }
@@ -355,7 +363,7 @@ try {
     $catalog = [ordered]@{ schema_version=1; repository=$Repository; maintenance_config=$maintenanceConfig; variants=$variants }
     $generated = [DateTime]::UtcNow.ToString('o')
     if ($previous) {
-        $previousGenerated = $previous['generated_at_utc']; [void]$previous.Remove('generated_at_utc')
+        [void]$previous.Remove('generated_at_utc')
         if ((Json-Identity $previous) -ceq (Json-Identity $catalog)) { $generated = $previousGenerated }
     }
     $catalog['generated_at_utc'] = $generated
