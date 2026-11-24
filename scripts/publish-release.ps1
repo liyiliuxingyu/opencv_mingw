@@ -95,3 +95,4 @@ $url = "https://github.com/$env:GITHUB_REPOSITORY/releases/tag/$tag"
 if ($env:GITHUB_OUTPUT) { "release_url=$url" | Out-File -LiteralPath $env:GITHUB_OUTPUT -Append -Encoding utf8 }
 if ($env:GITHUB_STEP_SUMMARY) { "`n[Download EXE and ZIP]($url)" | Out-File -LiteralPath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8 }
 Write-Host $url
+& (Join-Path $PSScriptRoot 'request-download-index-update.ps1')
