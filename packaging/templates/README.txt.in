@@ -1,5 +1,7 @@
 OpenCV @OPENCV_VERSION@ + MinGW-w64 GCC @GCC_VERSION@
 Windows x64 / UCRT / POSIX threads / SEH exceptions
+OpenCV configuration: @BUILD_CONFIGURATION@ / libraries: @LIBRARY_LAYOUT@
+Debug information: @DEBUG_SYMBOLS@
 
 This package contains the OpenCV C++ SDK, matching standalone MinGW-w64
 compiler toolchain, CMake, Ninja, required OpenCV runtime DLLs, and a small
@@ -36,6 +38,29 @@ YOUR OWN CMAKE PROJECT
 Run CMake from the developer prompt with the Ninja generator. OpenCV_DIR is
 already set to this package's CMake configuration directory. Use the bundled
 GCC toolchain consistently when building applications that link these DLLs.
+Select this package's configuration explicitly:
+
+  cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=@BUILD_CONFIGURATION@
+
+The included example checks that CMake selects real import libraries and DLLs
+for this configuration, and that the loaded OpenCV runtime agrees.
+
+DEBUG EDITION
+
+The Debug edition installs separately from Release and contains modular
+OpenCV DLLs ending in d.dll, matching import libraries and embedded DWARF
+symbols. Use a Debug consumer configuration and the bundled GDB debugger.
+Release and Debug DLLs must not be copied into the same runtime directory.
+
+OpenCV source files are not bundled. For source browsing, check out the exact
+OpenCV and contrib commits recorded in build-lock.json. In GDB, map the
+original build source directory to your checkout with:
+
+  set substitute-path ORIGINAL_SOURCE_DIRECTORY LOCAL_CHECKOUT
+
+The package verification checks that GDB can resolve an OpenCV function to
+its original source filename and line; no source download is required for
+that symbol check. Debug symbols are not stripped to reduce download size.
 
 FILES AND DEPLOYMENT
 
@@ -53,9 +78,10 @@ When deploying a compiled application to another computer, copy its required
 OpenCV and runtime DLLs beside the application's EXE. Keep the supplied license
 and notice files with redistributed components.
 
-This is a C++ SDK. It does not install the Python cv2 extension or a Python
-environment. Read build-info.json and the OpenCV build information for the
-features actually included in this build.
+@PYTHON_INSTRUCTIONS@
+
+Read build-info.json and the OpenCV build information for the features
+actually included in this build.
 
 LICENSES
 

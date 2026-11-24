@@ -3,11 +3,11 @@ setlocal
 call "%~dp0activate.cmd"
 if errorlevel 1 exit /b 1
 set "EXAMPLE_BUILD=%LOCALAPPDATA%\OpenCV-MinGW\examples\@PACKAGE_NAME@"
-cmake -S "%~dp0examples\smoke" -B "%EXAMPLE_BUILD%" -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_C_COMPILER=%~dp0mingw64\bin\gcc.exe" "-DCMAKE_CXX_COMPILER=%~dp0mingw64\bin\g++.exe" "-DOpenCV_DIR=%OpenCV_DIR%"
+cmake -S "%~dp0examples\smoke" -B "%EXAMPLE_BUILD%" -G Ninja -DCMAKE_BUILD_TYPE=@BUILD_CONFIGURATION@ -DOPENCV_EXPECTED_CONFIGURATION=@BUILD_CONFIGURATION@ "-DCMAKE_C_COMPILER=%~dp0mingw64\bin\gcc.exe" "-DCMAKE_CXX_COMPILER=%~dp0mingw64\bin\g++.exe" "-DOpenCV_DIR=%OpenCV_DIR%"
 if errorlevel 1 exit /b 1
-cmake --build "%EXAMPLE_BUILD%" --parallel 2
+cmake --build "%EXAMPLE_BUILD%" --config @BUILD_CONFIGURATION@ --parallel 2
 if errorlevel 1 exit /b 1
-ctest --test-dir "%EXAMPLE_BUILD%" --output-on-failure
+ctest --test-dir "%EXAMPLE_BUILD%" -C @BUILD_CONFIGURATION@ --output-on-failure
 if errorlevel 1 exit /b 1
 echo Example succeeded. Build directory: "%EXAMPLE_BUILD%"
 exit /b 0

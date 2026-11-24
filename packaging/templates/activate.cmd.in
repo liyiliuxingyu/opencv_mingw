@@ -8,7 +8,7 @@ set "CXX=g++"
 set "CMAKE_GENERATOR=Ninja"
 set "OPENCV_MINGW_ACTIVE_ROOT=%~dp0"
 :ready
-echo OpenCV @OPENCV_VERSION@ + MinGW-w64 GCC @GCC_VERSION@ (x64, UCRT)
+echo OpenCV @OPENCV_VERSION@ + MinGW-w64 GCC @GCC_VERSION@ (x64, UCRT, @BUILD_CONFIGURATION@)
 echo OpenCV_DIR="%OpenCV_DIR%"
 echo This command prompt uses the compiler bundled with this package.
 echo Run build-example.cmd to build and run the included example.
