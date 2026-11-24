@@ -1,0 +1,456 @@
+{
+  "schema_version": 1,
+  "repository": "liyiliuxingyu/opencv_mingw",
+  "maintenance_config": {
+    "python_version": "3.13",
+    "cuda_version": "13.5.0",
+    "cudnn_version": "9.28.1",
+    "cuda_arch_bin": "7.5;8.0;8.6;8.9;9.0",
+    "cuda_arch_ptx": "9.0"
+  },
+  "variants": {
+    "mingw-release-python": {
+      "variant": "mingw-release-python",
+      "status": "stable",
+      "package_name": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313",
+      "opencv_version": "5.1.0",
+      "source_run_id": "45320873434",
+      "source_run_attempt": 1,
+      "source_commit": "61e9cc3806bda8841d64c984d1429657c984ad87",
+      "release": {
+        "id": 456305033,
+        "tag_name": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-r45320873434-a1",
+        "html_url": "https://github.com/liyiliuxingyu/opencv_mingw/releases/tag/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-r45320873434-a1",
+        "published_at": "2026-11-24T04:33:16Z",
+        "prerelease": false
+      },
+      "build_info": {
+        "schema_version": 1,
+        "package_name": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313",
+        "opencv_version": "5.1.0",
+        "gcc_version": "16.2.0",
+        "mingw_version": "14.0.0",
+        "winlibs_version": "16.2.0posix-23.1.3-14.0.0-ucrt-r3",
+        "target": "x86_64-w64-mingw32",
+        "runtime": "ucrt",
+        "threading": "posix",
+        "exceptions": "seh",
+        "configuration": "Release",
+        "library_layout": "world",
+        "debug_symbols": "not-requested",
+        "shared_libraries": true,
+        "python_bindings": true,
+        "toolchain_kind": "mingw",
+        "packaged_at_utc": "2026-11-24T04:09:26.5291426Z",
+        "opencv_bin_dir": "opencv/x64/mingw/bin",
+        "opencv_cmake_dir": "opencv/x64/mingw/lib",
+        "toolchain_dir": "mingw64",
+        "runtime_dlls_copied": [
+          {
+            "name": "libgcc_s_seh-1.dll",
+            "toolchain_path": "bin/libgcc_s_seh-1.dll",
+            "sha256": "817eafccbb104d1a14fa9e4b894927514c8c502ee80aa1427f57872e55efdca8"
+          },
+          {
+            "name": "libstdc++-6.dll",
+            "toolchain_path": "bin/libstdc++-6.dll",
+            "sha256": "538f48a3fe22186e144934ab2ee96645c2a87a56373abfd2c8bec122318fe598"
+          },
+          {
+            "name": "libgomp-1.dll",
+            "toolchain_path": "bin/libgomp-1.dll",
+            "sha256": "6dc1afd45171e340acdf66dc677b228d3138e8d5b28c46ab29c35503f151ddcb"
+          },
+          {
+            "name": "libwinpthread-1.dll",
+            "toolchain_path": "bin/libwinpthread-1.dll",
+            "sha256": "2512e8e9ceecd1c47d894a3cd38b895e1f40f3d42d0ccebc2a1521ee2fe496a9"
+          },
+          {
+            "name": "libdl.dll",
+            "toolchain_path": "bin/libdl.dll",
+            "sha256": "f69d178945eec0c516387b32eefb933ee3bac64c523adc437b0b223a3a621658"
+          }
+        ],
+        "source_lock": "build-lock.json",
+        "opencv_build_summary": "opencv/build-info/configure.log",
+        "project_url": "https://github.com/liyiliuxingyu/opencv_mingw",
+        "python": {
+          "version": "3.13.17",
+          "major_minor": "3.13",
+          "abi": "cp313",
+          "extension_suffix": ".cp313-win_amd64.pyd",
+          "numpy_version": "2.5.5",
+          "runtime_packages": {}
+        },
+        "features": {
+          "parallel_framework": "OpenMP",
+          "ffmpeg": true,
+          "opencl": true
+        },
+        "opencv_commit": "e4f78fbcf1a773fbed69e14500e8b734963eb585",
+        "contrib_commit": "b67a855188a3d683813731010f6d39ac614733a4"
+      },
+      "build_lock": {
+        "schema_version": 1,
+        "resolved_at_utc": "2026-11-24T03:38:22.2346808Z",
+        "package_name": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313",
+        "configuration": "Release",
+        "python_bindings": true,
+        "python_version": "3.13",
+        "opencv_version": "5.1.0",
+        "opencv_commit": "e4f78fbcf1a773fbed69e14500e8b734963eb585",
+        "opencv_repository": "https://github.com/opencv/opencv.git",
+        "opencv_release_url": "https://github.com/opencv/opencv/releases/tag/5.1.0",
+        "contrib_commit": "b67a855188a3d683813731010f6d39ac614733a4",
+        "contrib_repository": "https://github.com/opencv/opencv_contrib.git",
+        "contrib_tag": "5.1.0",
+        "winlibs_version": "16.2.0posix-23.1.3-14.0.0-ucrt-r3",
+        "winlibs_release_url": "https://github.com/brechtsanders/winlibs_mingw/releases/tag/16.2.0posix-23.1.3-14.0.0-ucrt-r3",
+        "winlibs_asset_name": "winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.7z",
+        "winlibs_asset_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.7z",
+        "winlibs_sha256": "db014a73b71907c6c778fd1c938056cddcae9023f89f8dfff7783d9e45baf975",
+        "gcc_version": "16.2.0",
+        "mingw_version": "14.0.0",
+        "architecture": "x86_64",
+        "threading": "posix",
+        "exceptions": "seh",
+        "crt": "ucrt"
+      },
+      "origin": {
+        "schema_version": 1,
+        "checkpoint_status": "unverified",
+        "variant": "mingw-release-python",
+        "repository": "liyiliuxingyu/opencv_mingw",
+        "workflow_path": ".github/workflows/build-extended.yml",
+        "source_run_id": "45320873434",
+        "source_run_number": "3",
+        "source_run_attempt": "1",
+        "source_commit": "61e9cc3806bda8841d64c984d1429657c984ad87",
+        "source_ref": "refs/heads/master",
+        "package_name": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313",
+        "configuration": "Release",
+        "created_at_utc": "2026-11-24T04:10:45.0184944Z",
+        "files": {
+          "installer": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-setup.exe",
+          "archive": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313.zip",
+          "build_info": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-build-info.json",
+          "build_lock": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-build-lock.json",
+          "state": "build-state.json",
+          "result": "package-result.json",
+          "checksums": "SHA256SUMS",
+          "wheel": "opencv_mingw-5.1.0-cp313-cp313-win_amd64.whl",
+          "wheel_result": "python-wheel-result.json"
+        }
+      },
+      "verification": {
+        "result": "passed",
+        "github_run_id": "45320873434",
+        "github_run_attempt": 1,
+        "workflow_commit": "61e9cc3806bda8841d64c984d1429657c984ad87",
+        "gpu_execution": "not-applicable"
+      },
+      "assets": {
+        "installer": {
+          "name": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-setup.exe",
+          "size": 293726204,
+          "sha256": "fbc8889714579039c5cedbd8edbcd5b84316cd282d02dab8d447750ddcce910d",
+          "url": "https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-r45320873434-a1/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-setup.exe"
+        },
+        "zip": {
+          "name": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313.zip",
+          "size": 419030499,
+          "sha256": "b242ad72d382698de79788e5e9fbf706e54321b4b79613e30285ded9c144f61c",
+          "url": "https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-r45320873434-a1/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313.zip"
+        },
+        "checksums": {
+          "name": "SHA256SUMS",
+          "size": 978,
+          "sha256": "6e3ec001380c44b293e735800693e70cd1383caff6297378034f931b6686b7f5",
+          "url": "https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-r45320873434-a1/SHA256SUMS"
+        },
+        "build_info": {
+          "name": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-build-info.json",
+          "size": 2248,
+          "sha256": "a6a0d69bb1df984875d30d5e9c64fcacb0294cae2c71125718a1c58b26c3920c",
+          "url": "https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-r45320873434-a1/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-build-info.json"
+        },
+        "build_lock": {
+          "name": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-build-lock.json",
+          "size": 1346,
+          "sha256": "b4bd1694a9ad82237fcdc88e8f07f735d91e22c534f856df8dff64c3a7f8b624",
+          "url": "https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-r45320873434-a1/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-build-lock.json"
+        },
+        "verification": {
+          "name": "verification.json",
+          "size": 7000,
+          "sha256": "2926d4b8c9a4bceae8c25ea0813bf20a78fc5285a59279ef8e63090463a0a0a3",
+          "url": "https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-r45320873434-a1/verification.json"
+        },
+        "origin": {
+          "name": "candidate-origin.json",
+          "size": 1113,
+          "sha256": "3fe8fa452baec046651f50f29745416906f9799d4b21356d8cf57980e2099c8a",
+          "url": "https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-r45320873434-a1/candidate-origin.json"
+        },
+        "wheel": {
+          "name": "opencv_mingw-5.1.0-cp313-cp313-win_amd64.whl",
+          "size": 58258651,
+          "sha256": "eb09b5b9d3853bf531c67e4330eedbf9c2ea604672c5bde845eec639d1d3424c",
+          "url": "https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-r45320873434-a1/opencv_mingw-5.1.0-cp313-cp313-win_amd64.whl"
+        },
+        "python_wheel_result": {
+          "name": "python-wheel-result.json",
+          "size": 2070,
+          "sha256": "ab9b692a5606710679075663e0478f259168a1559e01e793aead403c5af75f58",
+          "url": "https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-r45320873434-a1/python-wheel-result.json"
+        },
+        "python_wheel_verification": {
+          "name": "python-wheel-verification.json",
+          "size": 1911,
+          "sha256": "9ce4ac03f5ab1b190ec05c60cb7345d38145ab4fbfbefaf21b600b1dd69be501",
+          "url": "https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-py313-r45320873434-a1/python-wheel-verification.json"
+        }
+      },
+      "config_match": true,
+      "config_status": "matched"
+    },
+    "mingw-debug": {
+      "variant": "mingw-debug",
+      "status": "stable",
+      "package_name": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug",
+      "opencv_version": "5.1.0",
+      "source_run_id": "45324144625",
+      "source_run_attempt": 1,
+      "source_commit": "f92896e3c1ae31d99ccff796b431fc058cc13de7",
+      "release": {
+        "id": 456313044,
+        "tag_name": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-r45324144625-a1",
+        "html_url": "https://github.com/liyiliuxingyu/opencv_mingw/releases/tag/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-r45324144625-a1",
+        "published_at": "2026-11-24T04:38:59Z",
+        "prerelease": false
+      },
+      "build_info": {
+        "schema_version": 1,
+        "package_name": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug",
+        "opencv_version": "5.1.0",
+        "gcc_version": "16.2.0",
+        "mingw_version": "14.0.0",
+        "winlibs_version": "16.2.0posix-23.1.3-14.0.0-ucrt-r3",
+        "target": "x86_64-w64-mingw32",
+        "runtime": "ucrt",
+        "threading": "posix",
+        "exceptions": "seh",
+        "configuration": "Debug",
+        "library_layout": "modular",
+        "debug_symbols": "embedded-dwarf",
+        "cpu_optimization_policy": "disabled-for-debug",
+        "cv_disable_optimization": true,
+        "shared_libraries": true,
+        "python_bindings": false,
+        "toolchain_kind": "mingw",
+        "packaged_at_utc": "2026-11-24T04:33:19.2135631Z",
+        "opencv_bin_dir": "opencv/x64/mingw/bin",
+        "opencv_cmake_dir": "opencv/x64/mingw/lib",
+        "toolchain_dir": "mingw64",
+        "runtime_dlls_copied": [
+          {
+            "name": "libgcc_s_seh-1.dll",
+            "toolchain_path": "bin/libgcc_s_seh-1.dll",
+            "sha256": "817eafccbb104d1a14fa9e4b894927514c8c502ee80aa1427f57872e55efdca8"
+          },
+          {
+            "name": "libstdc++-6.dll",
+            "toolchain_path": "bin/libstdc++-6.dll",
+            "sha256": "538f48a3fe22186e144934ab2ee96645c2a87a56373abfd2c8bec122318fe598"
+          },
+          {
+            "name": "libgomp-1.dll",
+            "toolchain_path": "bin/libgomp-1.dll",
+            "sha256": "6dc1afd45171e340acdf66dc677b228d3138e8d5b28c46ab29c35503f151ddcb"
+          },
+          {
+            "name": "libwinpthread-1.dll",
+            "toolchain_path": "bin/libwinpthread-1.dll",
+            "sha256": "2512e8e9ceecd1c47d894a3cd38b895e1f40f3d42d0ccebc2a1521ee2fe496a9"
+          },
+          {
+            "name": "libdl.dll",
+            "toolchain_path": "bin/libdl.dll",
+            "sha256": "f69d178945eec0c516387b32eefb933ee3bac64c523adc437b0b223a3a621658"
+          }
+        ],
+        "source_lock": "build-lock.json",
+        "opencv_build_summary": "opencv/build-info/configure.log",
+        "project_url": "https://github.com/liyiliuxingyu/opencv_mingw",
+        "features": {
+          "parallel_framework": "OpenMP",
+          "ffmpeg": true,
+          "opencl": true
+        },
+        "opencv_commit": "e4f78fbcf1a773fbed69e14500e8b734963eb585",
+        "contrib_commit": "b67a855188a3d683813731010f6d39ac614733a4",
+        "debug_symbol_dlls": [
+          "libopencv_bgsegm510d.dll",
+          "libopencv_bioinspired510d.dll",
+          "libopencv_calib510d.dll",
+          "libopencv_ccalib510d.dll",
+          "libopencv_core510d.dll",
+          "libopencv_datasets510d.dll",
+          "libopencv_dnn_objdetect510d.dll",
+          "libopencv_dnn_superres510d.dll",
+          "libopencv_dnn510d.dll",
+          "libopencv_dpm510d.dll",
+          "libopencv_face510d.dll",
+          "libopencv_features510d.dll",
+          "libopencv_flann510d.dll",
+          "libopencv_fuzzy510d.dll",
+          "libopencv_gapi510d.dll",
+          "libopencv_geometry510d.dll",
+          "libopencv_hfs510d.dll",
+          "libopencv_highgui510d.dll",
+          "libopencv_img_hash510d.dll",
+          "libopencv_imgcodecs510d.dll",
+          "libopencv_imgproc510d.dll",
+          "libopencv_intensity_transform510d.dll",
+          "libopencv_line_descriptor510d.dll",
+          "libopencv_ml510d.dll",
+          "libopencv_objdetect510d.dll",
+          "libopencv_optflow510d.dll",
+          "libopencv_phase_unwrapping510d.dll",
+          "libopencv_photo510d.dll",
+          "libopencv_plot510d.dll",
+          "libopencv_ptcloud510d.dll",
+          "libopencv_quality510d.dll",
+          "libopencv_rapid510d.dll",
+          "libopencv_reg510d.dll",
+          "libopencv_rgbd510d.dll",
+          "libopencv_saliency510d.dll",
+          "libopencv_shape510d.dll",
+          "libopencv_signal510d.dll",
+          "libopencv_stereo510d.dll",
+          "libopencv_stitching510d.dll",
+          "libopencv_structured_light510d.dll",
+          "libopencv_superres510d.dll",
+          "libopencv_surface_matching510d.dll",
+          "libopencv_text510d.dll",
+          "libopencv_tracking510d.dll",
+          "libopencv_video510d.dll",
+          "libopencv_videoio510d.dll",
+          "libopencv_videostab510d.dll",
+          "libopencv_wechat_qrcode510d.dll",
+          "libopencv_xfeatures2d510d.dll",
+          "libopencv_ximgproc510d.dll",
+          "libopencv_xobjdetect510d.dll",
+          "libopencv_xphoto510d.dll",
+          "libopencv_xstereo510d.dll"
+        ]
+      },
+      "build_lock": {
+        "schema_version": 1,
+        "resolved_at_utc": "2026-11-24T04:07:37.2959179Z",
+        "package_name": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug",
+        "configuration": "Debug",
+        "python_bindings": false,
+        "python_version": "",
+        "opencv_version": "5.1.0",
+        "opencv_commit": "e4f78fbcf1a773fbed69e14500e8b734963eb585",
+        "opencv_repository": "https://github.com/opencv/opencv.git",
+        "opencv_release_url": "https://github.com/opencv/opencv/releases/tag/5.1.0",
+        "contrib_commit": "b67a855188a3d683813731010f6d39ac614733a4",
+        "contrib_repository": "https://github.com/opencv/opencv_contrib.git",
+        "contrib_tag": "5.1.0",
+        "winlibs_version": "16.2.0posix-23.1.3-14.0.0-ucrt-r3",
+        "winlibs_release_url": "https://github.com/brechtsanders/winlibs_mingw/releases/tag/16.2.0posix-23.1.3-14.0.0-ucrt-r3",
+        "winlibs_asset_name": "winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.7z",
+        "winlibs_asset_url": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.2.0posix-23.1.3-14.0.0-ucrt-r3/winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r3.7z",
+        "winlibs_sha256": "db014a73b71907c6c778fd1c938056cddcae9023f89f8dfff7783d9e45baf975",
+        "gcc_version": "16.2.0",
+        "mingw_version": "14.0.0",
+        "architecture": "x86_64",
+        "threading": "posix",
+        "exceptions": "seh",
+        "crt": "ucrt"
+      },
+      "origin": {
+        "schema_version": 1,
+        "checkpoint_status": "unverified",
+        "variant": "mingw-debug",
+        "repository": "liyiliuxingyu/opencv_mingw",
+        "workflow_path": ".github/workflows/build-extended.yml",
+        "source_run_id": "45324144625",
+        "source_run_number": "5",
+        "source_run_attempt": "1",
+        "source_commit": "f92896e3c1ae31d99ccff796b431fc058cc13de7",
+        "source_ref": "refs/heads/master",
+        "package_name": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug",
+        "configuration": "Debug",
+        "created_at_utc": "2026-11-24T04:36:15.9435324Z",
+        "files": {
+          "installer": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-setup.exe",
+          "archive": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug.zip",
+          "build_info": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-build-info.json",
+          "build_lock": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-build-lock.json",
+          "state": "build-state.json",
+          "result": "package-result.json",
+          "checksums": "SHA256SUMS"
+        }
+      },
+      "verification": {
+        "result": "passed",
+        "github_run_id": "45324144625",
+        "github_run_attempt": 1,
+        "workflow_commit": "f92896e3c1ae31d99ccff796b431fc058cc13de7",
+        "gpu_execution": "not-applicable"
+      },
+      "assets": {
+        "installer": {
+          "name": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-setup.exe",
+          "size": 396939887,
+          "sha256": "601b966fe7655cf3b85f2fdc0bdd99bff73b660890b1df26e4d48598e4a1eb63",
+          "url": "https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-r45324144625-a1/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-setup.exe"
+        },
+        "zip": {
+          "name": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug.zip",
+          "size": 619884285,
+          "sha256": "074e8a33841119c6ae749faffc0db465720d06d65769fc3826dfb2a41ccd16ae",
+          "url": "https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-r45324144625-a1/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug.zip"
+        },
+        "checksums": {
+          "name": "SHA256SUMS",
+          "size": 676,
+          "sha256": "4f8fe846b92e08a66e47db998a042ff53c5f36547755c18fd254fa67bf5e3bd0",
+          "url": "https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-r45324144625-a1/SHA256SUMS"
+        },
+        "build_info": {
+          "name": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-build-info.json",
+          "size": 3999,
+          "sha256": "cce41e30d115fdf744a1e12f9cb63727370e1bf2900d8ab139456fedeb1e7abf",
+          "url": "https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-r45324144625-a1/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-build-info.json"
+        },
+        "build_lock": {
+          "name": "opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-build-lock.json",
+          "size": 1341,
+          "sha256": "3dca56990925da33930a096b09824a50c6a4862293a9ce22c65f44817c849150",
+          "url": "https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-r45324144625-a1/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-build-lock.json"
+        },
+        "verification": {
+          "name": "verification.json",
+          "size": 1264,
+          "sha256": "9fd31b54b6f6c1cfff4ccded21bc8adcb1396ee9bcb811ca687e04fde21062b6",
+          "url": "https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-r45324144625-a1/verification.json"
+        },
+        "origin": {
+          "name": "candidate-origin.json",
+          "size": 991,
+          "sha256": "91d99ec80d3f39e0996f20e55fe18072f0248d780dc646f5ed16bb82a1a3bd95",
+          "url": "https://github.com/liyiliuxingyu/opencv_mingw/releases/download/opencv-5.1.0-mingw-14.0.0-gcc-16.2.0-x64-debug-r45324144625-a1/candidate-origin.json"
+        }
+      },
+      "config_match": true,
+      "config_status": "matched"
+    },
+    "cuda-release-python": null
+  },
+  "generated_at_utc": "2026-11-24T05:25:30.7192460Z"
+}
