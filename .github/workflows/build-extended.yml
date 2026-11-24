@@ -1,0 +1,404 @@
+name: Build OpenCV Python CUDA and Debug
+
+on:
+  workflow_dispatch:
+    inputs:
+      opencv_version:
+        description: 'OpenCV stable release tag, or latest'
+        type: string
+        required: true
+        default: latest
+      winlibs_version:
+        description: 'WinLibs stable release tag, or latest'
+        type: string
+        required: true
+        default: latest
+      python_version:
+        description: 'Regular CPython x64 version for cv2 wheels'
+        type: choice
+        options: ['3.13', '3.12', '3.14']
+        default: '3.13'
+      build_debug:
+        description: 'Build the independent MinGW Debug C++ SDK'
+        type: boolean
+        default: true
+      build_cuda:
+        description: 'Build the separate MSVC CUDA SDK and Python wheel'
+        type: boolean
+        default: true
+      cuda_version:
+        description: 'Exact CUDA 13 redistribution release'
+        type: string
+        default: '13.5.0'
+      cudnn_version:
+        description: 'Exact cuDNN 9 redistribution release'
+        type: string
+        default: '9.28.1'
+      cuda_arch_bin:
+        description: 'Explicit CUDA GPU architectures; CUDA 13 requires 7.5+'
+        type: string
+        default: '7.5;8.0;8.6;8.9;9.0'
+      publish:
+        description: 'Publish each verified variant; CUDA remains prerelease without GPU tests'
+        type: boolean
+        default: true
+  push:
+    branches: [master]
+    paths: ['.github/workflows/build-extended.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opencv-extended-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  resolve:
+    name: Lock source and toolchain versions once
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - name: Resolve stable releases to exact commits and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPENCV_VERSION: ${{ inputs.opencv_version || 'latest' }}
+          WINLIBS_VERSION: ${{ inputs.winlibs_version || 'latest' }}
+        run: |
+          ./scripts/resolve-versions.ps1 -OpenCVVersion $env:OPENCV_VERSION `
+            -WinLibsVersion $env:WINLIBS_VERSION -OutputPath ./versions/versions.lock.json
+      - name: Select independent configurations
+        id: matrix
+        env:
+          BUILD_DEBUG: ${{ github.event_name == 'push' || inputs.build_debug }}
+        run: |
+          $variants = @(@{variant='mingw-release-python';configuration='Release';python=$true})
+          if ($env:BUILD_DEBUG -eq 'true') { $variants += @{variant='mingw-debug';configuration='Debug';python=$false} }
+          $matrix = @{include=$variants} | ConvertTo-Json -Depth 5 -Compress
+          "matrix=$matrix" | Out-File -LiteralPath $env:GITHUB_OUTPUT -Append -Encoding utf8
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: extended-versions-${{ github.run_id }}-${{ github.run_attempt }}
+          path: versions/versions.lock.json
+          if-no-files-found: error
+          retention-days: 14
+
+  mingw:
+    name: ${{ matrix.variant }}
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.resolve.outputs.matrix) }}
+    runs-on: windows-2022
+    timeout-minutes: 240
+    permissions:
+      contents: write
+    env:
+      VARIANT: ${{ matrix.variant }}
+      CONFIGURATION: ${{ matrix.configuration }}
+      PYTHON_VERSION: ${{ inputs.python_version || '3.13' }}
+      OUTPUT_DIR: ${{ github.workspace }}/dist
+    steps:
+      - name: Set isolated work paths
+        run: |
+          "WORK_ROOT=$env:RUNNER_TEMP/extended-mingw-$env:CONFIGURATION" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
+          "PACKAGE_ROOT=$env:RUNNER_TEMP/extended-package-$env:CONFIGURATION" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github
+            scripts
+            packaging
+            examples
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: extended-versions-${{ github.run_id }}-${{ github.run_attempt }}
+          path: versions
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        if: matrix.python
+        id: python
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          architecture: x64
+      - name: Prepare the exact configuration lock and installer compiler
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:WORK_ROOT, $env:PACKAGE_ROOT | Out-Null
+          $lock = Get-Content ./versions/versions.lock.json -Raw | ConvertFrom-Json -AsHashtable
+          $lock.configuration = $env:CONFIGURATION
+          $lock.python_bindings = $env:CONFIGURATION -eq 'Release'
+          $lock.python_version = if ($lock.python_bindings) { $env:PYTHON_VERSION } else { '' }
+          $lock.package_name += if ($lock.python_bindings) { '-py' + $env:PYTHON_VERSION.Replace('.','') } else { '-debug' }
+          $lock | ConvertTo-Json -Depth 20 | Set-Content "$env:WORK_ROOT/versions.lock.json" -Encoding utf8NoBOM
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            choco install innosetup --yes --no-progress --limit-output
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
+          }
+          if (-not (Test-Path -LiteralPath $iscc)) { throw 'ISCC.exe was not found.' }
+          "ISCC_PATH=$iscc" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
+          $probe = Join-Path $env:RUNNER_TEMP 'installer template probe'
+          New-Item -ItemType Directory -Force -Path "$probe/input", "$probe/output" | Out-Null
+          'Installer syntax preflight' | Set-Content "$probe/input/README.txt"
+          $pythonEnabled = [int]($env:CONFIGURATION -eq 'Release')
+          & $iscc /Q "/DPackageDir=$probe/input" "/DOutputDir=$probe/output" /DPackageName=preflight `
+            "/DOpenCVVersion=$($lock.opencv_version)" "/DGccVersion=$($lock.gcc_version)" `
+            "/DBuildConfiguration=$env:CONFIGURATION" "/DPythonEnabled=$pythonEnabled" `
+            "/DPythonAbi=cp$($env:PYTHON_VERSION.Replace('.',''))" ./packaging/opencv-mingw.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer template preflight failed before the OpenCV build.' }
+          Remove-Item -LiteralPath $probe -Recurse -Force
+      - name: Build the selected native SDK
+        env:
+          PYTHON_EXE: ${{ steps.python.outputs.python-path }}
+        run: |
+          $parameters = @{
+            LockFile="$env:WORK_ROOT/versions.lock.json"; WorkRoot=$env:WORK_ROOT
+            InstallRoot="$env:PACKAGE_ROOT/opencv"; Configuration=$env:CONFIGURATION
+            ParallelJobs=4; CleanupBuild=$true
+          }
+          if ($env:CONFIGURATION -eq 'Release') { $parameters.PythonExecutable = $env:PYTHON_EXE }
+          ./scripts/build-opencv.ps1 @parameters
+      - name: Create the cv2 wheel and relocatable SDK loader
+        if: matrix.python
+        env:
+          PYTHON_EXE: ${{ steps.python.outputs.python-path }}
+        run: |
+          ./scripts/build-python-wheel.ps1 -StateFile "$env:WORK_ROOT/build-state.json" `
+            -PythonExecutable $env:PYTHON_EXE -OutputDir $env:OUTPUT_DIR -DistributionName opencv_mingw | Out-Null
+          ./scripts/prepare-python-sdk.ps1 -StateFile "$env:WORK_ROOT/build-state.json" `
+            -WheelResultFile "$env:OUTPUT_DIR/opencv_mingw-python-wheel-result.json" -PackageRoot $env:PACKAGE_ROOT
+      - name: Create the independent EXE and ZIP
+        run: |
+          ./scripts/package-opencv.ps1 -StateFile "$env:WORK_ROOT/build-state.json" `
+            -PackageRoot $env:PACKAGE_ROOT -OutputDir $env:OUTPUT_DIR -IsccPath $env:ISCC_PATH
+      - name: Save recoverable candidate before distribution verification
+        id: candidate
+        run: |
+          $parameters = @{StateFile="$env:WORK_ROOT/build-state.json"; ResultFile="$env:OUTPUT_DIR/package-result.json"; Variant=$env:VARIANT}
+          if ($env:CONFIGURATION -eq 'Release') { $parameters.WheelResultFile = "$env:OUTPUT_DIR/opencv_mingw-python-wheel-result.json" }
+          ./scripts/save-extended-candidate.ps1 @parameters
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.candidate.outputs.artifact_name }}
+          path: ${{ steps.candidate.outputs.candidate_paths }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - name: Verify staged SDK, relocated ZIP, EXE installation and uninstall
+        env:
+          PYTHON_EXE: ${{ steps.python.outputs.python-path }}
+        run: |
+          $parameters = @{ResultFile="$env:OUTPUT_DIR/package-result.json"; WorkRoot="$env:RUNNER_TEMP/distribution verification"}
+          if ($env:CONFIGURATION -eq 'Release') { $parameters.PythonExecutable = $env:PYTHON_EXE }
+          ./scripts/verify-distribution.ps1 @parameters
+      - name: Verify wheel in a clean Python environment
+        if: matrix.python
+        env:
+          PYTHON_EXE: ${{ steps.python.outputs.python-path }}
+        run: |
+          $wheel = Get-Content "$env:OUTPUT_DIR/python-wheel-result.json" -Raw | ConvertFrom-Json
+          ./scripts/test-python-package.ps1 -PythonExecutable $env:PYTHON_EXE -WheelPath $wheel.wheel_path `
+            -WorkRoot "$env:RUNNER_TEMP/wheel verification" | Out-Null
+          Copy-Item "$env:RUNNER_TEMP/wheel verification/python-test-result.json" "$env:OUTPUT_DIR/python-wheel-verification.json"
+      - name: Validate publication gates and finalize checksums
+        run: ./scripts/publish-extended.ps1 -ResultFile "$env:OUTPUT_DIR/package-result.json" -Variant $env:VARIANT -PrepareOnly
+      - name: Upload verified distributions
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: opencv-verified-${{ matrix.variant }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            dist/*.exe
+            dist/*.zip
+            dist/*.whl
+            dist/*-build-info.json
+            dist/*-build-lock.json
+            dist/verification.json
+            dist/python-wheel-result.json
+            dist/python-wheel-verification.json
+            dist/candidate-origin.json
+            dist/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - name: Publish this verified variant
+        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && (github.event_name == 'push' || inputs.publish)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/publish-extended.ps1 -ResultFile "$env:OUTPUT_DIR/package-result.json" -Variant $env:VARIANT
+      - name: Retain diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: extended-logs-${{ matrix.variant }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.WORK_ROOT }}/logs
+            ${{ env.WORK_ROOT }}/python-config/*.json
+            ${{ env.WORK_ROOT }}/build-state.json
+            ${{ env.WORK_ROOT }}/versions.lock.json
+            ${{ env.WORK_ROOT }}/build/CMakeDownloadLog.txt
+            ${{ env.WORK_ROOT }}/build/CMakeFiles/CMakeConfigureLog.yaml
+            ${{ runner.temp }}/distribution verification/**/test-result.json
+            ${{ runner.temp }}/distribution verification/**/python-test-result.json
+            ${{ runner.temp }}/distribution verification/**/opencv-build-info.txt
+            ${{ runner.temp }}/distribution verification/**/*.log
+            ${{ runner.temp }}/wheel verification/**/python-test-result.json
+            ${{ runner.temp }}/wheel verification/**/*.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  cuda:
+    name: cuda-release-python
+    needs: resolve
+    if: github.event_name == 'push' || inputs.build_cuda
+    runs-on: windows-2022
+    timeout-minutes: 360
+    permissions:
+      contents: write
+    env:
+      PYTHON_VERSION: ${{ inputs.python_version || '3.13' }}
+      CUDA_VERSION: ${{ inputs.cuda_version || '13.5.0' }}
+      CUDNN_VERSION: ${{ inputs.cudnn_version || '9.28.1' }}
+      CUDA_ARCH_BIN: ${{ inputs.cuda_arch_bin || '7.5;8.0;8.6;8.9;9.0' }}
+      OUTPUT_DIR: ${{ github.workspace }}/dist
+    steps:
+      - name: Set isolated CUDA work paths
+        run: |
+          "WORK_ROOT=$env:RUNNER_TEMP/extended-cuda" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
+          "PACKAGE_ROOT=$env:RUNNER_TEMP/extended-cuda-package" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github
+            scripts
+            packaging
+            examples
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: extended-versions-${{ github.run_id }}-${{ github.run_attempt }}
+          path: versions
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        id: python
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          architecture: x64
+      - name: Ensure installer compiler is available
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            choco install innosetup --yes --no-progress --limit-output
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
+          }
+          if (-not (Test-Path -LiteralPath $iscc)) { throw 'ISCC.exe was not found.' }
+          "ISCC_PATH=$iscc" | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
+          $probe = Join-Path $env:RUNNER_TEMP 'CUDA installer template probe'
+          New-Item -ItemType Directory -Force -Path "$probe/input", "$probe/output" | Out-Null
+          'Installer syntax preflight' | Set-Content "$probe/input/README.txt"
+          $lock = Get-Content ./versions/versions.lock.json -Raw | ConvertFrom-Json
+          & $iscc /Q "/DPackageDir=$probe/input" "/DOutputDir=$probe/output" /DPackageName=preflight `
+            "/DOpenCVVersion=$($lock.opencv_version)" "/DCudaVersion=$env:CUDA_VERSION" ./packaging/opencv-cuda.iss
+          if ($LASTEXITCODE -ne 0) { throw 'CUDA installer template preflight failed before the OpenCV build.' }
+          Remove-Item -LiteralPath $probe -Recurse -Force
+      - name: Compile with verified MSVC, CUDA and cuDNN
+        env:
+          PYTHON_EXE: ${{ steps.python.outputs.python-path }}
+        run: |
+          ./scripts/build-opencv-cuda.ps1 -LockFile ./versions/versions.lock.json -WorkRoot $env:WORK_ROOT `
+            -InstallRoot "$env:PACKAGE_ROOT/opencv" -Configuration Release -PythonExecutable $env:PYTHON_EXE `
+            -PythonVersion $env:PYTHON_VERSION -CudaVersion $env:CUDA_VERSION -CudnnVersion $env:CUDNN_VERSION `
+            -CudaArchBin $env:CUDA_ARCH_BIN -CudaArchPtx '9.0' -ParallelJobs 2 -CleanupBuild
+      - name: Build CUDA cv2 wheel with exact NVIDIA dependencies
+        env:
+          PYTHON_EXE: ${{ steps.python.outputs.python-path }}
+        run: |
+          ./scripts/build-python-wheel.ps1 -StateFile "$env:WORK_ROOT/build-state.json" -PythonExecutable $env:PYTHON_EXE `
+            -OutputDir $env:OUTPUT_DIR -DistributionName opencv_cuda -RequireCuda | Out-Null
+          ./scripts/prepare-python-sdk.ps1 -StateFile "$env:WORK_ROOT/build-state.json" `
+            -WheelResultFile "$env:OUTPUT_DIR/opencv_cuda-python-wheel-result.json" -PackageRoot $env:PACKAGE_ROOT
+      - name: Create MSVC CUDA EXE and ZIP
+        run: |
+          ./scripts/package-opencv-cuda.ps1 -StateFile "$env:WORK_ROOT/build-state.json" `
+            -PackageRoot $env:PACKAGE_ROOT -OutputDir $env:OUTPUT_DIR -IsccPath $env:ISCC_PATH
+      - name: Save recoverable CUDA candidate
+        id: candidate
+        run: |
+          ./scripts/save-extended-candidate.ps1 -StateFile "$env:WORK_ROOT/build-state.json" `
+            -ResultFile "$env:OUTPUT_DIR/package-result.json" -Variant cuda-release-python `
+            -WheelResultFile "$env:OUTPUT_DIR/opencv_cuda-python-wheel-result.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.candidate.outputs.artifact_name }}
+          path: ${{ steps.candidate.outputs.candidate_paths }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - name: Verify CUDA SDK and installer; report actual GPU availability
+        env:
+          PYTHON_EXE: ${{ steps.python.outputs.python-path }}
+        run: |
+          ./scripts/verify-cuda-distribution.ps1 -StateFile "$env:WORK_ROOT/build-state.json" `
+            -ResultFile "$env:OUTPUT_DIR/package-result.json" -PythonExecutable $env:PYTHON_EXE `
+            -WorkRoot "$env:RUNNER_TEMP/CUDA distribution verification"
+      - name: Verify CUDA wheel in a clean Python environment
+        env:
+          PYTHON_EXE: ${{ steps.python.outputs.python-path }}
+        run: |
+          $wheel = Get-Content "$env:OUTPUT_DIR/python-wheel-result.json" -Raw | ConvertFrom-Json
+          ./scripts/test-python-package.ps1 -PythonExecutable $env:PYTHON_EXE -WheelPath $wheel.wheel_path `
+            -WorkRoot "$env:RUNNER_TEMP/CUDA wheel verification" -RequireCuda | Out-Null
+          Copy-Item "$env:RUNNER_TEMP/CUDA wheel verification/python-test-result.json" "$env:OUTPUT_DIR/python-wheel-verification.json"
+      - name: Validate CUDA publication gates and finalize checksums
+        run: ./scripts/publish-extended.ps1 -ResultFile "$env:OUTPUT_DIR/package-result.json" -Variant cuda-release-python -PrepareOnly
+      - name: Upload verified CUDA distributions
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: opencv-verified-cuda-release-python-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            dist/*.exe
+            dist/*.zip
+            dist/*.whl
+            dist/*-build-info.json
+            dist/*-build-lock.json
+            dist/verification.json
+            dist/python-wheel-result.json
+            dist/python-wheel-verification.json
+            dist/candidate-origin.json
+            dist/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - name: Publish CUDA prerelease when GPU execution remains untested
+        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && (github.event_name == 'push' || inputs.publish)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/publish-extended.ps1 -ResultFile "$env:OUTPUT_DIR/package-result.json" -Variant cuda-release-python
+      - name: Retain CUDA diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: extended-logs-cuda-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.WORK_ROOT }}/logs
+            ${{ env.WORK_ROOT }}/python-config/*.json
+            ${{ env.WORK_ROOT }}/build-state.json
+            ${{ env.WORK_ROOT }}/build-lock.json
+            ${{ env.WORK_ROOT }}/cuda-toolkit/*.json
+            ${{ env.WORK_ROOT }}/build/CMakeDownloadLog.txt
+            ${{ env.WORK_ROOT }}/build/CMakeFiles/CMakeConfigureLog.yaml
+            ${{ runner.temp }}/CUDA distribution verification/**/*.log
+            ${{ runner.temp }}/CUDA distribution verification/**/python-test-result.json
+            ${{ runner.temp }}/CUDA distribution verification/**/gpu-verification.json
+            ${{ runner.temp }}/CUDA wheel verification/**/*.log
+            ${{ runner.temp }}/CUDA wheel verification/**/python-test-result.json
+          if-no-files-found: warn
+          retention-days: 14
