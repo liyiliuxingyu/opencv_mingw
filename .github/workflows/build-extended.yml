@@ -50,7 +50,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: opencv-extended-${{ github.ref }}
+  group: opencv-extended-${{ github.ref }}-${{ (github.event_name == 'push' || inputs.build_cuda) && 'with-cuda' || 'cpu' }}
   cancel-in-progress: false
 
 defaults:
