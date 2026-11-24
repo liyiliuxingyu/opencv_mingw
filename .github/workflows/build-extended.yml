@@ -18,6 +18,10 @@ on:
         type: choice
         options: ['3.13', '3.12', '3.14']
         default: '3.13'
+      build_mingw:
+        description: 'Build the MinGW Python SDK and the selected Debug SDK'
+        type: boolean
+        default: true
       build_debug:
         description: 'Build the independent MinGW Debug C++ SDK'
         type: boolean
@@ -50,7 +54,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: opencv-extended-${{ github.ref }}-${{ (github.event_name == 'push' || inputs.build_cuda) && 'with-cuda' || 'cpu' }}-${{ (github.event_name == 'push' || inputs.build_debug) && 'with-debug' || 'release-only' }}
+  group: opencv-extended-${{ github.ref }}-${{ (github.event_name == 'push' || inputs.build_mingw) && 'mingw' || 'no-mingw' }}-${{ (github.event_name == 'push' || inputs.build_cuda) && 'with-cuda' || 'cpu' }}-${{ (github.event_name == 'push' || inputs.build_debug) && 'with-debug' || 'release-only' }}
   cancel-in-progress: false
 
 defaults:
@@ -96,6 +100,7 @@ jobs:
   mingw:
     name: ${{ matrix.variant }}
     needs: resolve
+    if: github.event_name == 'push' || inputs.build_mingw
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.resolve.outputs.matrix) }}
