@@ -1,6 +1,7 @@
 # OpenCV + MinGW-w64 Windows 安装包
 
 [![Windows build](https://github.com/liyiliuxingyu/opencv_mingw/actions/workflows/build-windows.yml/badge.svg)](https://github.com/liyiliuxingyu/opencv_mingw/actions/workflows/build-windows.yml)
+[![Python CUDA Debug](https://github.com/liyiliuxingyu/opencv_mingw/actions/workflows/build-extended.yml/badge.svg)](https://github.com/liyiliuxingyu/opencv_mingw/actions/workflows/build-extended.yml)
 
 使用 GitHub Actions，从 **OpenCV 最新稳定版及同版本 contrib 源码**构建 Windows x64 C++ SDK，搭配 **WinLibs 最新稳定版的 GCC / MinGW-w64 工具链**，生成便携 ZIP 和 EXE 安装程序。
 
@@ -20,7 +21,49 @@
 | 可编辑示例 | C++ 源码、CMake 工程和一键编译命令 |
 | 构建记录 | 完整源码提交、下载地址、工具链 SHA-256、构建参数、第三方下载校验清单 |
 
-目标系统为 **Windows 10/11 x64**。这是 MinGW C++ SDK；Python `cv2`、CUDA、独立 Debug 库不在本次打包范围。OpenCV 的实际可用模块与第三方功能记录在构建摘要中。
+目标系统为 **Windows 10/11 x64**。基础工作流提供 MinGW Release C++ SDK；扩展工作流另提供 Python `cv2`、独立 MinGW Debug 和 MSVC CUDA 版。OpenCV 的实际可用模块与第三方功能记录在构建摘要中。每种产物只有完成自己的发布检查后才会出现在 Releases；CUDA 的 GPU 执行状态单独记录。
+
+## Python、CUDA 与独立 Debug
+
+打开 [Build OpenCV Python CUDA and Debug](https://github.com/liyiliuxingyu/opencv_mingw/actions/workflows/build-extended.yml)，点击 **Run workflow**。默认共用一次解析的 OpenCV/contrib 源码提交，分别构建以下三种产物：
+
+| 产物 | 编译器与配置 | Python | 安装与分发 |
+| --- | --- | --- | --- |
+| `mingw-release-python` | 最新稳定 WinLibs GCC，Release，world DLL | 默认 CPython 3.13 x64，可选 3.12/3.14 | 独立 EXE、ZIP、`opencv_mingw-…whl` |
+| `mingw-debug` | 同版本 WinLibs GCC，真正 Debug，独立模块 DLL | 无；不要求 Debug Python | 独立 EXE、ZIP，包含 DWARF 符号和 GDB |
+| `cuda-release-python` | Visual Studio 2022 MSVC，Release，CUDA 模块 DLL | 与所选 CPython 版本一致 | 独立 EXE、ZIP、`opencv_cuda-…whl` |
+
+`build_debug`、`build_cuda` 可分别关闭。默认 CUDA 为 **13.5.0**、cuDNN 为 **9.28.1**；这两项使用显式版本，不随 OpenCV 的 `latest` 隐式变化。下载来自 NVIDIA 官方 redistribution，逐项验证 SHA-256。默认 GPU 架构为 `7.5;8.0;8.6;8.9;9.0`，另包含 `9.0` PTX；CUDA 13 不接受低于 7.5 的目标。需要其他 GPU 架构时修改 `cuda_arch_bin`，构建会先向 nvcc 核对支持范围。
+
+Windows CUDA 路线使用 NVIDIA 支持的 MSVC host compiler，不能把 MinGW C++ ABI 与 MSVC CUDA 库混用。CUDA SDK 不包含 Visual Studio 编译器、GPU 驱动或完整 CUDA Toolkit。C++ 用户需安装匹配的 VS 2022 C++ Build Tools、CUDA/cuDNN、CMake/Ninja；Python wheel 使用精确版本的 NVIDIA pip 运行库依赖。默认不构建需要另行提供 NVIDIA Video Codec SDK 的 `cudacodec`。
+
+### 安装 Python cv2
+
+1. 安装所选版本的普通 **64 位 CPython**，例如 3.13；不使用 free-threaded 或 Debug Python。
+2. 解压 ZIP 或安装 EXE，运行包内 **`install-python.cmd`**，也可使用开始菜单的 **Install Python cv2**。
+3. 脚本在 `%LOCALAPPDATA%\OpenCV-SDK\python-envs\<包名>` 创建虚拟环境，并安装包内 wheel 与精确版本的 NumPy；CUDA 版还会下载 NVIDIA 运行库，需要网络及额外磁盘空间。
+4. 使用该虚拟环境的 Python 运行 `import cv2`。
+
+也可以先自行创建虚拟环境，再用该环境的 `python -m pip install <下载的完整.whl路径>` 安装。Wheel 文件名中的 `cp313-cp313-win_amd64` 代表 CPython 3.13 Windows x64；不适用于其他 Python 小版本或架构。`opencv-mingw`、`opencv-cuda`、`opencv-python`、`opencv-contrib-python` 都可能提供同名 `cv2`，请放入不同虚拟环境。
+
+### 使用独立 Debug 库
+
+打开 Debug 安装包的开发终端，或者调用其 `activate.cmd`，然后配置消费者：
+
+```bat
+cmake -S . -B build-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-debug --parallel 2
+```
+
+Debug 使用模块化 `*opencv_*d.dll`、对应导入库及原生 `-g` 调试信息；不会用 Release 或 RelWithDebInfo 代替。验证会检查 CMake 的真实 DEBUG 导入目标、运行时配置、DWARF/source-line 节，以及 GDB 能否定位 OpenCV 函数的源码行。OpenCV 源码未随包复制，可按 `build-lock.json` 的精确提交获取，并用 GDB `set substitute-path` 映射本地源码目录。
+
+### CUDA 验证边界
+
+普通 GitHub Windows 托管运行器没有兼容 NVIDIA GPU。工作流验证 nvcc 编译、CUDA/cuDNN 配置、C++ 链接和 CPU 功能、真实 `cv2` 导入、ZIP 搬迁、EXE 安装与卸载；**不能据此声称 GPU 算法或性能已验证**。
+
+当没有实际 GPU 执行记录时，CUDA 包标记为 **Pre-release**，不会取代正式 CPU Release。`verification.json` 明确记录 GPU 测试状态。在目标显卡机器上，C++ 用户可运行 CUDA SDK 的 `build-example.cmd`；其中 GPU 检查要求实际设备可用，并比较 GPU/CPU 运算结果。Python 用户可通过 `cv2.cuda.getCudaEnabledDeviceCount()` 检查设备数量，再运行与自身应用对应的 GPU 测试；仅有 `cv2.cuda` 命名空间不足以证明构建启用了 CUDA。
+
+扩展工作流各产物独立验证和发布，CUDA 失败不会阻止已通过检查的 MinGW 产物发布。扩展工作流由手动运行或修改自身 YAML 触发；修改其他脚本后请手动运行该工作流。没有添加定时构建。
 
 针对部分 WinLibs GCC 版本在含空格安装目录下拆分 `default-manifest.o` 路径的上游问题，构建会对已知的 GCC specs 表达式应用精确兼容补丁，保留默认 manifest 及原有条件。未受影响的版本保持原样；原始配置、补丁说明和前后 SHA-256 会随构建记录保留。工具链会先在含空格路径下编译并运行小型程序，再开始 OpenCV 构建。也可独立运行 **Verify latest MinGW in paths with spaces** 工作流快速检查最新工具链。
 
@@ -57,6 +100,8 @@
 如果耗时的编译和打包已成功，但后续验证失败，可先修复验证脚本，再运行 **Verify an existing OpenCV installer candidate**。填写原构建页面 URL 中的 `source_run_id`，`source_run_attempt` 默认为 `1`。它会校验候选产物来源和全部校验值，从原 ZIP 恢复暂存 SDK，重新检查 ZIP、EXE 安装、消费者运行和卸载，无需重新编译 OpenCV。
 
 恢复工作流的 `publish` 默认关闭；需要发布时启用，且原构建与恢复工作流都必须来自默认分支。发布记录分别列出原构建与本次验证的提交。此工作流不修改候选 ZIP/EXE；如果需要修复包内文件或重新编译，请运行完整构建。
+
+Python、Debug、CUDA 扩展产物使用各自的 `opencv-extended-candidate-<variant>-<运行ID>-<重试编号>` 候选工件。对应 **Verify an extended OpenCV candidate** 工作流要求选择原运行、重试编号和产物类型；CUDA 恢复会重新取得锁定的官方 toolkit 用于验证消费者，但不重新编译 OpenCV。恢复同样不会修改原 ZIP、EXE 或 wheel。
 
 ## 安装和使用
 
