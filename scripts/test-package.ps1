@@ -146,7 +146,39 @@ try {
     if ($requiresImportedProof) { $runArguments += @('--expected-configuration', $configuration) }
     if ($RequireFFmpeg) { $runArguments += '--require-ffmpeg' }
     if ($RequireOpenMP) { $runArguments += '--require-openmp' }
-    Invoke-Logged -File (Join-Path $buildDir 'opencv_mingw_smoke.exe') -Arguments $runArguments -LogFile (Join-Path $runRoot 'run.log')
+    $consumer = Join-Path $buildDir 'opencv_mingw_smoke.exe'
+    try {
+        Invoke-Logged -File $consumer -Arguments $runArguments -LogFile (Join-Path $runRoot 'run.log')
+    } catch {
+        $runtimeFailure = $_
+        $runtimeExitCode = $LASTEXITCODE
+        $runtimePath = $env:PATH
+        $crashDebugger = Join-Path $toolchainBin 'gdb.exe'
+        $crashLog = Join-Path $runRoot 'crash-gdb.log'
+        "Original consumer exit code: $runtimeExitCode" | Set-Content -LiteralPath $crashLog -Encoding utf8NoBOM
+        if (Test-Path -LiteralPath $crashDebugger -PathType Leaf) {
+            try {
+                # GDB may need its own toolchain DLLs. The inferior still gets
+                # exactly the restricted runtime PATH used by the failed test.
+                # Do not print environment variables, frame arguments or locals.
+                $env:PATH = (@($toolchainBin, $opencvBin) + $windowsPath) -join ';'
+                $env:LC_ALL = 'C'
+                & $crashDebugger '--batch' '--nx' '--nh' '--quiet' '-iex' 'set auto-load off' `
+                    '-ex' 'set pagination off' '-ex' 'set width 0' '-ex' 'set confirm off' `
+                    '-ex' 'set debuginfod enabled off' '-ex' 'set print frame-arguments none' `
+                    '-ex' "set environment PATH = $runtimePath" '-ex' 'run' `
+                    '-ex' 'thread apply all bt' '-ex' 'info sharedlibrary' `
+                    '--args' $consumer @runArguments 2>&1 |
+                    Tee-Object -FilePath $crashLog -Append | Write-Host
+            } catch {
+                'The optional GDB diagnostic could not complete; the original runtime failure is retained.' |
+                    Add-Content -LiteralPath $crashLog -Encoding utf8NoBOM
+            } finally {
+                $env:PATH = $runtimePath
+            }
+        }
+        throw $runtimeFailure
+    }
     $runtimeVersion = (Get-Content -LiteralPath (Join-Path $resultDir 'opencv-version.txt') -Raw).Trim()
     $runtimeBuildInfo = Get-Content -LiteralPath (Join-Path $resultDir 'opencv-build-info.txt') -Raw
     if ($runtimeBuildInfo -notmatch "(?m)Configuration:\s+$configuration\s*$") {
