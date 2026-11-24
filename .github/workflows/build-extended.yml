@@ -18,8 +18,8 @@ on:
         type: choice
         options: ['3.13', '3.12', '3.14']
         default: '3.13'
-      build_mingw:
-        description: 'Build the MinGW Python SDK and the selected Debug SDK'
+      build_python:
+        description: 'Build the MinGW Release SDK and CPU Python wheel'
         type: boolean
         default: true
       build_debug:
@@ -54,7 +54,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: opencv-extended-${{ github.ref }}-${{ (github.event_name == 'push' || inputs.build_mingw) && 'mingw' || 'no-mingw' }}-${{ (github.event_name == 'push' || inputs.build_cuda) && 'with-cuda' || 'cpu' }}-${{ (github.event_name == 'push' || inputs.build_debug) && 'with-debug' || 'release-only' }}
+  group: opencv-extended-${{ github.ref }}-python-${{ github.event_name == 'push' || inputs.build_python }}-debug-${{ github.event_name == 'push' || inputs.build_debug }}-cuda-${{ github.event_name == 'push' || inputs.build_cuda }}
   cancel-in-progress: false
 
 defaults:
@@ -68,6 +68,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
+      mingw_enabled: ${{ steps.matrix.outputs.mingw_enabled }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -84,12 +85,17 @@ jobs:
       - name: Select independent configurations
         id: matrix
         env:
+          BUILD_PYTHON: ${{ github.event_name == 'push' || inputs.build_python }}
           BUILD_DEBUG: ${{ github.event_name == 'push' || inputs.build_debug }}
+          BUILD_CUDA: ${{ github.event_name == 'push' || inputs.build_cuda }}
         run: |
-          $variants = @(@{variant='mingw-release-python';configuration='Release';python=$true})
+          $variants = @()
+          if ($env:BUILD_PYTHON -eq 'true') { $variants += @{variant='mingw-release-python';configuration='Release';python=$true} }
           if ($env:BUILD_DEBUG -eq 'true') { $variants += @{variant='mingw-debug';configuration='Debug';python=$false} }
+          if ($variants.Count -eq 0 -and $env:BUILD_CUDA -ne 'true') { throw 'Select at least one build variant.' }
           $matrix = @{include=$variants} | ConvertTo-Json -Depth 5 -Compress
           "matrix=$matrix" | Out-File -LiteralPath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "mingw_enabled=$($variants.Count -gt 0)".ToLowerInvariant() | Out-File -LiteralPath $env:GITHUB_OUTPUT -Append -Encoding utf8
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: extended-versions-${{ github.run_id }}-${{ github.run_attempt }}
@@ -100,7 +106,7 @@ jobs:
   mingw:
     name: ${{ matrix.variant }}
     needs: resolve
-    if: github.event_name == 'push' || inputs.build_mingw
+    if: needs.resolve.outputs.mingw_enabled == 'true'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.resolve.outputs.matrix) }}
