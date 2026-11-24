@@ -2,6 +2,7 @@ OpenCV @OPENCV_VERSION@ + MinGW-w64 GCC @GCC_VERSION@
 Windows x64 / UCRT / POSIX threads / SEH exceptions
 OpenCV configuration: @BUILD_CONFIGURATION@ / libraries: @LIBRARY_LAYOUT@
 Debug information: @DEBUG_SYMBOLS@
+OpenCV CPU optimization policy: @CPU_OPTIMIZATION_POLICY@
 
 This package contains the OpenCV C++ SDK, matching standalone MinGW-w64
 compiler toolchain, CMake, Ninja, required OpenCV runtime DLLs, and a small
@@ -51,6 +52,13 @@ The Debug edition installs separately from Release and contains modular
 OpenCV DLLs ending in d.dll, matching import libraries and embedded DWARF
 symbols. Use a Debug consumer configuration and the bundled GDB debugger.
 Release and Debug DLLs must not be copied into the same runtime directory.
+
+Debug is built with CV_DISABLE_OPTIMIZATION=ON and an empty CPU_DISPATCH.
+OpenCV CPU intrinsics, optional instruction-set dispatch and explicit loop
+unrolling are disabled to avoid the Win64 GCC AVX stack-alignment failure
+in unoptimized code. The compiler's -g -O0 Debug settings and full DWARF
+symbols are retained. Debug is intended for stepping through library code;
+use the optimized Release edition for performance measurements.
 
 OpenCV source files are not bundled. For source browsing, check out the exact
 OpenCV and contrib commits recorded in build-lock.json. In GDB, map the
