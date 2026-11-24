@@ -33,7 +33,7 @@
 | `mingw-debug` | 同版本 WinLibs GCC，真正 Debug，独立模块 DLL | 无；不要求 Debug Python | 独立 EXE、ZIP，包含 DWARF 符号和 GDB |
 | `cuda-release-python` | Visual Studio 2022 MSVC，Release，CUDA 模块 DLL | 与所选 CPython 版本一致 | 独立 EXE、ZIP、`opencv_cuda-…whl` |
 
-`build_debug`、`build_cuda` 可分别关闭。默认 CUDA 为 **13.5.0**、cuDNN 为 **9.28.1**；这两项使用显式版本，不随 OpenCV 的 `latest` 隐式变化。下载来自 NVIDIA 官方 redistribution，逐项验证 SHA-256。默认 GPU 架构为 `7.5;8.0;8.6;8.9;9.0`，另包含 `9.0` PTX；CUDA 13 不接受低于 7.5 的目标。需要其他 GPU 架构时修改 `cuda_arch_bin`，构建会先向 nvcc 核对支持范围。
+`build_debug`、`build_cuda` 可分别关闭。关闭 `build_mingw` 可跳过全部 MinGW 产物，仅运行 CUDA；这样单项重试不必重编其他正在运行的版本。默认 CUDA 为 **13.5.0**、cuDNN 为 **9.28.1**；这两项使用显式版本，不随 OpenCV 的 `latest` 隐式变化。下载来自 NVIDIA 官方 redistribution，逐项验证 SHA-256。默认 GPU 架构为 `7.5;8.0;8.6;8.9;9.0`，另包含 `9.0` PTX；CUDA 13 不接受低于 7.5 的目标。需要其他 GPU 架构时修改 `cuda_arch_bin`，构建会先向 nvcc 核对支持范围。
 
 Windows CUDA 路线使用 NVIDIA 支持的 MSVC host compiler，不能把 MinGW C++ ABI 与 MSVC CUDA 库混用。CUDA SDK 不包含 Visual Studio 编译器、GPU 驱动或完整 CUDA Toolkit。C++ 用户需安装匹配的 VS 2022 C++ Build Tools、CUDA/cuDNN、CMake/Ninja；Python wheel 使用精确版本的 NVIDIA pip 运行库依赖。默认不构建需要另行提供 NVIDIA Video Codec SDK 的 `cudacodec`。
 
