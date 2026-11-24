@@ -19,7 +19,7 @@
   #define BuildConfiguration "Release"
 #endif
 #ifndef PythonEnabled
-  #define PythonEnabled 0
+  #define PythonEnabled "0"
 #endif
 #if BuildConfiguration == "Debug"
   #define ConfigurationSuffix "-Debug"
@@ -30,7 +30,7 @@
 #else
   #error BuildConfiguration must be Release or Debug
 #endif
-#if PythonEnabled == 1
+#if PythonEnabled == "1"
   #ifndef PythonAbi
     #error PythonAbi must be supplied for Python packages
   #endif
@@ -81,7 +81,7 @@ Source: "{#PackageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 [Icons]
 Name: "{group}\Developer Command Prompt"; Filename: "{cmd}"; Parameters: "/D /K """"{app}\activate.cmd"""""; WorkingDir: "{app}"
 Name: "{group}\Readme"; Filename: "{app}\README.txt"; WorkingDir: "{app}"
-#if PythonEnabled == 1
+#if PythonEnabled == "1"
 Name: "{group}\Install Python cv2"; Filename: "{cmd}"; Parameters: "/D /K """"{app}\install-python.cmd"""""; WorkingDir: "{app}"
 #endif
 Name: "{group}\Package Folder"; Filename: "{app}"; WorkingDir: "{app}"
