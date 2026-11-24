@@ -213,6 +213,12 @@ $options = @(
     '-DWITH_OPENCL=ON', '-DWITH_IPP=OFF', '-DWITH_CUDA=OFF', '-DWITH_CUDNN=OFF',
     '-DWITH_DIRECTML=OFF', '-DWITH_OBSENSOR=OFF', '-DWITH_VTK=OFF', '-DWITH_LAPACK=OFF'
 )
+if ($isDebug) {
+    # Win64 GCC can misalign over-aligned AVX temporaries at -O0 (PR54412).
+    # Build the dedicated Debug SDK without OpenCV's explicit CPU optimizations;
+    # do not hide the defect by changing the consumer's runtime CPU selection.
+    $options += @('-DCV_DISABLE_OPTIMIZATION=ON', '-DCPU_DISPATCH:STRING=')
+}
 if ($pythonEnabled) { $options += $pythonConfig.cmake_options }
 $options | ConvertTo-Json | Set-Content (Join-Path $logRoot 'cmake-options.json') -Encoding utf8NoBOM
 Invoke-NativeLogged $cmake $options 'configure.log'
@@ -240,6 +246,18 @@ if ($isDebug) {
             throw "The GNU $language Debug flags must retain full debug information: $($flagMatch.Value)"
         }
     }
+    $configHeader = Get-Content -LiteralPath (Join-Path $buildRoot 'cvconfig.h') -Raw
+    $cpuConfigHeader = Get-Content -LiteralPath (Join-Path $buildRoot 'cv_cpu_config.h') -Raw
+    if ($cache -notmatch '(?m)^CV_DISABLE_OPTIMIZATION:BOOL=ON\r?$' -or
+        $cache -notmatch '(?m)^CPU_DISPATCH:STRING=\r?$' -or
+        $configHeader -notmatch '(?m)^\s*#define\s+CV_DISABLE_OPTIMIZATION\b') {
+        throw 'Debug must disable OpenCV explicit CPU optimizations at build time.'
+    }
+    if ($cpuConfigHeader -match '(?m)^\s*#define\s+CV_CPU_DISPATCH_COMPILE_' -or
+        $configureText -match '(?m)Dispatched code generation:[ \t]+\S') {
+        throw 'Debug must not compile optional CPU instruction-set dispatch paths.'
+    }
+    Write-Host 'Debug CPU policy verified: OpenCV intrinsics, optional dispatch and explicit loop unrolling are disabled.'
 }
 Invoke-NativeLogged $cmake @('--build', $buildRoot, '--parallel', "$ParallelJobs") 'build.log'
 Invoke-NativeLogged $cmake @('--install', $buildRoot, '--config', $Configuration) 'install.log'
@@ -290,7 +308,7 @@ Copy-Item -LiteralPath $LockFile -Destination (Join-Path $metadataRoot 'versions
 foreach ($name in @('toolchain-sha256.txt', 'toolchain-patch.json', 'toolchain-specs.before.txt', 'toolchain-specs.after.txt', 'compiler-version.txt', 'compiler-path-probe.log', 'cmake-version.txt', 'ninja-version.txt', 'cmake-options.json', 'cmake-ca-info.txt', 'configure.log', 'sources.log')) {
     Copy-Item -LiteralPath (Join-Path $logRoot $name) -Destination $metadataRoot
 }
-foreach ($name in @('CMakeCache.txt', 'CMakeDownloadLog.txt')) {
+foreach ($name in @('CMakeCache.txt', 'CMakeDownloadLog.txt', 'cvconfig.h', 'cv_cpu_config.h')) {
     $file = Join-Path $buildRoot $name
     if (Test-Path -LiteralPath $file) { Copy-Item -LiteralPath $file -Destination $metadataRoot }
 }
@@ -342,6 +360,8 @@ $state = [ordered]@{
     python = if ($pythonEnabled) { $pythonConfig.python } else { $null }
     library_layout = if ($isDebug) { 'modular' } else { 'world' }
     debug_symbols = if ($isDebug) { 'embedded-dwarf' } else { 'not-requested' }
+    cpu_optimization_policy = if ($isDebug) { 'disabled-for-debug' } else { 'upstream-default' }
+    cv_disable_optimization = [bool]$isDebug
     debug_symbol_dlls = $debugDllNames
     requested_parallel_backend = 'OpenMP'
     requested_ffmpeg = $true

@@ -144,6 +144,11 @@ if ($isDebug -and $packageName -notmatch '-debug$') { throw 'Debug must have a s
 if (-not $isDebug -and $packageName -match '-debug$') { throw 'Release must not use a Debug package name.' }
 $libraryLayout = if ($isDebug) { 'modular' } else { 'world' }
 $debugSymbols = if ($isDebug) { 'embedded-dwarf' } else { 'not-requested' }
+$cpuOptimizationPolicy = if ($state.PSObject.Properties['cpu_optimization_policy']) { [string]$state.cpu_optimization_policy } else { 'upstream-default' }
+$disableOptimization = $state.PSObject.Properties['cv_disable_optimization'] -and [bool]$state.cv_disable_optimization
+if ($isDebug -and ($cpuOptimizationPolicy -ne 'disabled-for-debug' -or -not $disableOptimization)) {
+    throw 'The standalone Debug SDK must be rebuilt with OpenCV explicit CPU optimizations disabled.'
+}
 $pythonEnabled = $state.PSObject.Properties['python_bindings'] -and [bool]$state.python_bindings
 $pythonExternalDlls = @()
 if ($pythonEnabled) {
@@ -239,6 +244,7 @@ $replacements = @{
     '@BUILD_CONFIGURATION@' = $configuration
     '@LIBRARY_LAYOUT@' = $libraryLayout
     '@DEBUG_SYMBOLS@' = $debugSymbols
+    '@CPU_OPTIMIZATION_POLICY@' = $cpuOptimizationPolicy
     '@PYTHON_INSTRUCTIONS@' = $pythonInstructions
 }
 foreach ($name in @('activate.cmd', 'build-example.cmd', 'README.txt')) {
@@ -262,6 +268,8 @@ $metadata = [ordered]@{
     configuration = $configuration
     library_layout = $libraryLayout
     debug_symbols = $debugSymbols
+    cpu_optimization_policy = $cpuOptimizationPolicy
+    cv_disable_optimization = [bool]$disableOptimization
     shared_libraries = $true
     python_bindings = [bool]$pythonEnabled
     toolchain_kind = 'mingw'
